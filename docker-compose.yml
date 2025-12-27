@@ -1,0 +1,134 @@
+version: '3.8'
+
+services:
+  # ===========================================
+  # API Service (FastAPI)
+  # ===========================================
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/autogrid
+      - REDIS_URL=redis://redis:6379
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - API_DEBUG=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./api:/app/api
+      - ./bot:/app/bot
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ===========================================
+  # Bot Engine Service
+  # ===========================================
+  bot-engine:
+    build:
+      context: .
+      dockerfile: bot/Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/autogrid
+      - REDIS_URL=redis://redis:6379
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./bot:/app/bot
+
+  # ===========================================
+  # Celery Worker (Background Tasks)
+  # ===========================================
+  celery:
+    build:
+      context: .
+      dockerfile: bot/Dockerfile
+    command: celery -A bot.tasks worker -l info
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/autogrid
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+      - postgres
+    volumes:
+      - ./bot:/app/bot
+
+  # ===========================================
+  # Celery Beat (Scheduler)
+  # ===========================================
+  celery-beat:
+    build:
+      context: .
+      dockerfile: bot/Dockerfile
+    command: celery -A bot.tasks beat -l info
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/autogrid
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+      - celery
+    volumes:
+      - ./bot:/app/bot
+
+  # ===========================================
+  # Web Dashboard (Next.js)
+  # ===========================================
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - api
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+      - /app/.next
+
+  # ===========================================
+  # PostgreSQL + TimescaleDB
+  # ===========================================
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: autogrid
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================
+  # Redis (Cache + Message Broker)
+  # ===========================================
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+volumes:
+  postgres_data:
+  redis_data:
