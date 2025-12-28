@@ -8,8 +8,11 @@ from datetime import date
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+
+from api.core.dependencies import get_current_user
+from api.models.orm import User
 
 router = APIRouter()
 
@@ -47,7 +50,10 @@ class BacktestResult(BaseModel):
 
 
 @router.post("/", response_model=BacktestResult, status_code=status.HTTP_201_CREATED)
-async def run_backtest(request: BacktestRequest) -> BacktestResult:
+async def run_backtest(
+    request: BacktestRequest,
+    current_user: User = Depends(get_current_user),
+) -> BacktestResult:
     """
     Run a backtest simulation.
 
@@ -56,7 +62,7 @@ async def run_backtest(request: BacktestRequest) -> BacktestResult:
     - Calculates performance metrics
     - Returns results with equity curve
     """
-    # TODO: Implement backtesting
+    # TODO: Implement backtesting (associate with current_user)
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail="Backtesting not yet implemented",
@@ -64,11 +70,14 @@ async def run_backtest(request: BacktestRequest) -> BacktestResult:
 
 
 @router.get("/{backtest_id}", response_model=BacktestResult)
-async def get_backtest(backtest_id: UUID) -> BacktestResult:
+async def get_backtest(
+    backtest_id: UUID,
+    current_user: User = Depends(get_current_user),
+) -> BacktestResult:
     """
     Get backtest results by ID.
     """
-    # TODO: Implement get backtest
+    # TODO: Implement get backtest (ensure belongs to current_user)
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Backtest {backtest_id} not found",

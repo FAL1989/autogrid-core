@@ -7,8 +7,11 @@ CRUD operations for trading bots.
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+
+from api.core.dependencies import get_current_user
+from api.models.orm import User
 
 router = APIRouter()
 
@@ -60,7 +63,10 @@ class BotListResponse(BaseModel):
 
 
 @router.post("/", response_model=BotResponse, status_code=status.HTTP_201_CREATED)
-async def create_bot(bot: BotCreate) -> BotResponse:
+async def create_bot(
+    bot: BotCreate,
+    current_user: User = Depends(get_current_user),
+) -> BotResponse:
     """
     Create a new trading bot.
 
@@ -76,20 +82,25 @@ async def create_bot(bot: BotCreate) -> BotResponse:
 
 
 @router.get("/", response_model=BotListResponse)
-async def list_bots() -> BotListResponse:
+async def list_bots(
+    current_user: User = Depends(get_current_user),
+) -> BotListResponse:
     """
     List all bots for the authenticated user.
     """
-    # TODO: Implement bot listing
+    # TODO: Implement bot listing (filter by current_user.id)
     return BotListResponse(bots=[], total=0)
 
 
 @router.get("/{bot_id}", response_model=BotResponse)
-async def get_bot(bot_id: UUID) -> BotResponse:
+async def get_bot(
+    bot_id: UUID,
+    current_user: User = Depends(get_current_user),
+) -> BotResponse:
     """
     Get bot details by ID.
     """
-    # TODO: Implement get bot
+    # TODO: Implement get bot (ensure bot belongs to current_user)
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Bot {bot_id} not found",
@@ -97,18 +108,24 @@ async def get_bot(bot_id: UUID) -> BotResponse:
 
 
 @router.post("/{bot_id}/start")
-async def start_bot(bot_id: UUID) -> dict[str, str]:
+async def start_bot(
+    bot_id: UUID,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, str]:
     """
     Start a stopped/paused bot.
     """
-    # TODO: Implement start bot
+    # TODO: Implement start bot (ensure bot belongs to current_user)
     return {"status": "starting", "bot_id": str(bot_id)}
 
 
 @router.post("/{bot_id}/stop")
-async def stop_bot(bot_id: UUID) -> dict[str, str]:
+async def stop_bot(
+    bot_id: UUID,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, str]:
     """
     Stop a running bot and cancel all open orders.
     """
-    # TODO: Implement stop bot
+    # TODO: Implement stop bot (ensure bot belongs to current_user)
     return {"status": "stopping", "bot_id": str(bot_id)}

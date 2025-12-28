@@ -1,0 +1,244 @@
+"""
+SQLAlchemy ORM Models.
+
+Database models matching the schema defined in db/init.sql.
+"""
+
+import uuid
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from api.core.database import Base
+
+
+class User(Base):
+    """User account model."""
+
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    email: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    password_hash: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+    plan: Mapped[str] = mapped_column(
+        String(20),
+        default="free",
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+    )
+    telegram_chat_id: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("NOW()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("NOW()"),
+        onupdate=datetime.utcnow,
+    )
+
+    # Relationships
+    credentials: Mapped[list["ExchangeCredential"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    bots: Mapped[list["Bot"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    backtests: Mapped[list["Backtest"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+
+class ExchangeCredential(Base):
+    """Exchange API credentials (encrypted)."""
+
+    __tablename__ = "exchange_credentials"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    exchange: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+    api_key_encrypted: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+    api_secret_encrypted: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+    is_testnet: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+    )
+    permissions: Mapped[dict] = mapped_column(
+        JSONB,
+        default=dict,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("NOW()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("NOW()"),
+        onupdate=datetime.utcnow,
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="credentials")
+    bots: Mapped[list["Bot"]] = relationship(back_populates="credential")
+
+
+class Bot(Base):
+    """Trading bot configuration."""
+
+    __tablename__ = "bots"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    credential_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("exchange_credentials.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+    strategy: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+    exchange: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+    config: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="stopped",
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("NOW()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("NOW()"),
+        onupdate=datetime.utcnow,
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="bots")
+    credential: Mapped["ExchangeCredential"] = relationship(back_populates="bots")
+
+
+class Backtest(Base):
+    """Backtest results."""
+
+    __tablename__ = "backtests"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    strategy: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+    timeframe: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+    )
+    start_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    end_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    config: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+    )
+    results: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="pending",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("NOW()"),
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="backtests")

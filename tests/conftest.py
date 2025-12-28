@@ -5,14 +5,26 @@ Shared fixtures for all tests.
 """
 
 import asyncio
+import os
 from decimal import Decimal
 from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from api.core.database import Base, get_db
+from api.models.orm import User
+from api.services.jwt import create_token_pair
+from api.services.security import hash_password
 from bot.strategies.base import Order
+
+# Test database URL (use a separate test database)
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/autogrid_test"
+)
 
 
 @pytest.fixture(scope="session")
@@ -102,15 +114,6 @@ def mock_exchange() -> MagicMock:
 
 
 @pytest.fixture
-async def async_client() -> AsyncGenerator[AsyncClient, None]:
-    """Create async HTTP client for API testing."""
-    from api.main import app
-
-    async with AsyncClient(app=app, base_url="http://test") as client:
-        yield client
-
-
-@pytest.fixture
 def grid_config() -> dict:
     """Sample grid strategy configuration."""
     return {
@@ -135,23 +138,128 @@ def dca_config() -> dict:
     }
 
 
-# Database fixtures (for integration tests)
+# ===========================================
+# Database Fixtures
+# ===========================================
+
+
+@pytest.fixture(scope="session")
+async def test_engine():
+    """Create test database engine."""
+    engine = create_async_engine(
+        TEST_DATABASE_URL,
+        echo=False,
+        pool_pre_ping=True,
+    )
+
+    # Create all tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    yield engine
+
+    # Drop all tables after tests
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+    await engine.dispose()
 
 
 @pytest.fixture
-async def db_session():
-    """Create database session for testing."""
-    # TODO: Implement when database is set up
-    # Use test database with rollback after each test
-    yield None
+async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
+    """Create database session with rollback for testing."""
+    async_session = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    async with async_session() as session:
+        yield session
+        # Rollback any uncommitted changes
+        await session.rollback()
 
 
-# Redis fixtures
+@pytest.fixture
+async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    """Create async HTTP client for API testing with test database."""
+    from api.main import app
+
+    # Override the database dependency
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+    # Clean up overrides
+    app.dependency_overrides.clear()
+
+
+# ===========================================
+# Authentication Fixtures
+# ===========================================
+
+
+@pytest.fixture
+async def test_user(db_session: AsyncSession) -> User:
+    """Create a test user in the database."""
+    user = User(
+        email="test@example.com",
+        password_hash=hash_password("TestPassword123!"),
+        plan="free",
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+def test_user_password() -> str:
+    """Return the password for the test user."""
+    return "TestPassword123!"
+
+
+@pytest.fixture
+async def auth_headers(test_user: User) -> dict[str, str]:
+    """Create authentication headers with valid access token."""
+    access_token, _ = create_token_pair(test_user.id)
+    return {"Authorization": f"Bearer {access_token}"}
+
+
+@pytest.fixture
+async def auth_client(
+    async_client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> AsyncClient:
+    """Create authenticated async client."""
+    async_client.headers.update(auth_headers)
+    return async_client
+
+
+# ===========================================
+# Redis Fixtures
+# ===========================================
 
 
 @pytest.fixture
 async def redis_client():
     """Create Redis client for testing."""
-    # TODO: Implement when Redis is set up
-    # Use separate test database (db=15)
-    yield None
+    import redis.asyncio as redis
+
+    client = redis.from_url(
+        "redis://localhost:6379/15",  # Use database 15 for testing
+        encoding="utf-8",
+        decode_responses=True,
+    )
+
+    yield client
+
+    # Clean up test data
+    await client.flushdb()
+    await client.close()

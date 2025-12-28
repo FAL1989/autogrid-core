@@ -4,10 +4,64 @@ AutoGrid API - FastAPI Application
 Main entry point for the REST API.
 """
 
+import logging
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from sqlalchemy import text
+
+from api.core.config import get_settings
+from api.core.database import close_db, engine
+from api.core.rate_limiter import close_redis, init_redis
 from api.routes import auth, backtest, bots
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """
+    Application lifespan manager.
+
+    Handles startup and shutdown events for:
+    - Database connection pool
+    - Redis connection
+    """
+    settings = get_settings()
+
+    # Startup
+    logger.info("Starting AutoGrid API...")
+
+    # Test database connection
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("SELECT 1"))
+        logger.info("Database connection successful")
+    except Exception as e:
+        logger.error(f"Database connection failed: {e}")
+        raise
+
+    # Initialize Redis
+    try:
+        redis = await init_redis()
+        await redis.ping()
+        logger.info("Redis connection successful")
+    except Exception as e:
+        logger.warning(f"Redis connection failed: {e}. Rate limiting will be disabled.")
+
+    logger.info(f"API running in {'debug' if settings.api_debug else 'production'} mode")
+
+    yield
+
+    # Shutdown
+    logger.info("Shutting down AutoGrid API...")
+    await close_redis()
+    await close_db()
+    logger.info("Shutdown complete")
+
 
 app = FastAPI(
     title="AutoGrid API",
@@ -15,9 +69,11 @@ app = FastAPI(
     version="0.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # CORS configuration
+settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],  # Next.js dev server
