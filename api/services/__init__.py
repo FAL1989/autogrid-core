@@ -1,5 +1,6 @@
 """API Services Package."""
 
+from api.services.bot_service import BotService
 from api.services.jwt import (
     TokenError,
     TokenPayload,
@@ -26,4 +27,6 @@ __all__ = [
     "verify_password",
     # User Service
     "UserService",
+    # Bot Service
+    "BotService",
 ]

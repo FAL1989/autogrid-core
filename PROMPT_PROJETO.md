@@ -73,11 +73,12 @@ AutoGrid/
 │   ├── models/
 │   │   ├── schemas.py                # Schemas Pydantic (User, Bot, Order)
 │   │   └── orm.py                    # ✅ NOVO - SQLAlchemy ORM models
-│   └── services/                     # ✅ NOVO - Serviços implementados
+│   └── services/                     # ✅ Serviços implementados
 │       ├── __init__.py
 │       ├── security.py               # Hash de senhas (bcrypt)
 │       ├── jwt.py                    # Criação/validação JWT
-│       └── user_service.py           # CRUD de usuários
+│       ├── user_service.py           # CRUD de usuários
+│       └── bot_service.py            # ✅ NOVO - CRUD de bots
 │
 ├── bot/                              # Engine de Trading
 │   ├── __init__.py
@@ -127,13 +128,15 @@ AutoGrid/
 │   ├── .eslintrc.json
 │   └── Dockerfile
 │
-├── tests/                            # Testes Automatizados
-│   ├── conftest.py                   # Fixtures pytest (mock exchange, orders, auth)
+├── tests/                            # Testes Automatizados (58 testes)
+│   ├── conftest.py                   # Fixtures pytest (mock exchange, orders, auth, bots)
+│   ├── pytest.ini                    # Configuração pytest-asyncio
 │   ├── unit/
 │   │   ├── test_strategies.py        # Testes Grid e DCA
-│   │   └── test_auth.py              # ✅ NOVO - Testes de autenticação (17 testes)
+│   │   ├── test_auth.py              # ✅ Testes de autenticação (17 testes)
+│   │   └── test_bots.py              # ✅ NOVO - Testes de CRUD bots (21 testes)
 │   └── integration/
-│       └── test_api.py               # Testes de API
+│       └── test_api.py               # Testes de API (20 testes)
 │
 ├── db/
 │   └── init.sql                      # Schema completo TimescaleDB
@@ -171,8 +174,8 @@ AutoGrid/
 - [x] ✅ **Password hashing** com bcrypt
 - [x] ✅ **SQLAlchemy ORM** com PostgreSQL async
 - [x] ✅ **Middleware de autenticação** (get_current_user)
-- [x] CRUD de bots (list, get, create, update, delete) - protegido com auth
-- [x] Start/Stop de bots - protegido com auth
+- [x] ✅ **CRUD de bots funcional** (list, get, create, delete) com BotService
+- [x] ✅ **Start/Stop de bots** com validação de estado (stopped/running/paused/error)
 - [x] Endpoint de backtest - protegido com auth
 - [x] Schemas Pydantic completos
 
@@ -275,11 +278,11 @@ make docker-up
 - [x] Criar middleware de autenticação
 - [x] Adicionar rate limiting (código pronto em rate_limiter.py)
 
-#### 3. Implementar CRUD de Bots Funcional
-- [ ] Criar models SQLAlchemy
-- [ ] Implementar repository pattern
-- [ ] Conectar rotas aos services
-- [ ] Validar permissões por usuário
+#### 3. Implementar CRUD de Bots Funcional ✅
+- [x] Criar models SQLAlchemy (Bot, ExchangeCredential em orm.py)
+- [x] Implementar repository pattern (BotService)
+- [x] Conectar rotas aos services (6 endpoints funcionais)
+- [x] Validar permissões por usuário (ownership check)
 
 #### 4. Implementar Conexão com Exchange
 - [ ] Validar credenciais na criação
@@ -461,5 +464,5 @@ TELEGRAM_CHAT_ID=
 ---
 
 *Prompt gerado em: Dezembro 2025*
-*Última atualização: 28/12/2025 - Autenticação implementada*
-*Versão: 1.1.0*
+*Última atualização: 28/12/2025 - CRUD de Bots implementado*
+*Versão: 1.2.0*

@@ -4,16 +4,25 @@ Bot Management Routes
 CRUD operations for trading bots.
 """
 
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field, model_validator
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.core.database import get_db
 from api.core.dependencies import get_current_user
 from api.models.orm import User
+from api.services.bot_service import BotService
 
 router = APIRouter()
+
+
+# =============================================================================
+# Schemas
+# =============================================================================
 
 
 class GridConfig(BaseModel):
@@ -24,13 +33,24 @@ class GridConfig(BaseModel):
     grid_count: int = Field(..., ge=5, le=100, description="Number of grid lines")
     investment: float = Field(..., gt=0, description="Total investment amount")
 
+    @model_validator(mode="after")
+    def validate_price_range(self) -> "GridConfig":
+        """Ensure lower_price is less than upper_price."""
+        if self.lower_price >= self.upper_price:
+            raise ValueError("lower_price must be less than upper_price")
+        return self
+
 
 class DCAConfig(BaseModel):
     """DCA bot configuration."""
 
     amount: float = Field(..., gt=0, description="Amount per buy")
-    interval: str = Field(..., description="Buy interval (hourly, daily, weekly)")
-    trigger_drop: float | None = Field(None, description="Price drop % to trigger extra buy")
+    interval: Literal["hourly", "daily", "weekly"] = Field(
+        ..., description="Buy interval"
+    )
+    trigger_drop: float | None = Field(
+        None, ge=0, le=100, description="Price drop % to trigger extra buy"
+    )
 
 
 class BotCreate(BaseModel):
@@ -49,83 +69,282 @@ class BotResponse(BaseModel):
     id: UUID
     name: str
     strategy: str
+    exchange: str
     symbol: str
     status: str
     realized_pnl: float
     config: dict
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        """Pydantic config."""
+
+        from_attributes = True
 
 
 class BotListResponse(BaseModel):
-    """Bot list response."""
+    """Bot list response with pagination."""
 
     bots: list[BotResponse]
     total: int
+    limit: int
+    offset: int
+
+
+class BotActionResponse(BaseModel):
+    """Response for bot start/stop actions."""
+
+    bot_id: UUID
+    status: str
+    message: str
+
+
+# =============================================================================
+# Endpoints
+# =============================================================================
 
 
 @router.post("/", response_model=BotResponse, status_code=status.HTTP_201_CREATED)
 async def create_bot(
     bot: BotCreate,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> BotResponse:
     """
     Create a new trading bot.
 
-    - Validates exchange credentials
+    - Validates exchange credentials belong to user
     - Validates strategy configuration
     - Creates bot in database
     """
-    # TODO: Implement bot creation
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Bot creation not yet implemented",
+    bot_service = BotService(db)
+
+    # Validate credential ownership
+    credential = await bot_service.get_credential_for_user(
+        bot.credential_id, current_user.id
+    )
+    if credential is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Exchange credential not found",
+        )
+
+    # Validate config matches strategy type
+    if bot.strategy == "grid" and not isinstance(bot.config, GridConfig):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Grid strategy requires GridConfig",
+        )
+    if bot.strategy == "dca" and not isinstance(bot.config, DCAConfig):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="DCA strategy requires DCAConfig",
+        )
+
+    # Create bot
+    new_bot = await bot_service.create(
+        user_id=current_user.id,
+        credential_id=credential.id,
+        name=bot.name,
+        strategy=bot.strategy,
+        exchange=credential.exchange,
+        symbol=bot.symbol,
+        config=bot.config.model_dump(),
+    )
+
+    return BotResponse(
+        id=new_bot.id,
+        name=new_bot.name,
+        strategy=new_bot.strategy,
+        exchange=new_bot.exchange,
+        symbol=new_bot.symbol,
+        status=new_bot.status,
+        realized_pnl=0.0,
+        config=new_bot.config,
+        created_at=new_bot.created_at,
+        updated_at=new_bot.updated_at,
     )
 
 
 @router.get("/", response_model=BotListResponse)
 async def list_bots(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> BotListResponse:
     """
     List all bots for the authenticated user.
     """
-    # TODO: Implement bot listing (filter by current_user.id)
-    return BotListResponse(bots=[], total=0)
+    bot_service = BotService(db)
+
+    bots, total = await bot_service.list_by_user(
+        current_user.id, limit=limit, offset=offset
+    )
+
+    bot_responses = [
+        BotResponse(
+            id=bot.id,
+            name=bot.name,
+            strategy=bot.strategy,
+            exchange=bot.exchange,
+            symbol=bot.symbol,
+            status=bot.status,
+            realized_pnl=0.0,  # TODO: Calculate from bot_metrics
+            config=bot.config,
+            created_at=bot.created_at,
+            updated_at=bot.updated_at,
+        )
+        for bot in bots
+    ]
+
+    return BotListResponse(
+        bots=bot_responses,
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/{bot_id}", response_model=BotResponse)
 async def get_bot(
     bot_id: UUID,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> BotResponse:
     """
     Get bot details by ID.
     """
-    # TODO: Implement get bot (ensure bot belongs to current_user)
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Bot {bot_id} not found",
+    bot_service = BotService(db)
+
+    bot = await bot_service.get_by_id_for_user(bot_id, current_user.id)
+    if bot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bot not found",
+        )
+
+    return BotResponse(
+        id=bot.id,
+        name=bot.name,
+        strategy=bot.strategy,
+        exchange=bot.exchange,
+        symbol=bot.symbol,
+        status=bot.status,
+        realized_pnl=0.0,  # TODO: Calculate from bot_metrics
+        config=bot.config,
+        created_at=bot.created_at,
+        updated_at=bot.updated_at,
     )
 
 
-@router.post("/{bot_id}/start")
+@router.post("/{bot_id}/start", response_model=BotActionResponse)
 async def start_bot(
     bot_id: UUID,
     current_user: User = Depends(get_current_user),
-) -> dict[str, str]:
+    db: AsyncSession = Depends(get_db),
+) -> BotActionResponse:
     """
     Start a stopped/paused bot.
     """
-    # TODO: Implement start bot (ensure bot belongs to current_user)
-    return {"status": "starting", "bot_id": str(bot_id)}
+    bot_service = BotService(db)
+
+    bot = await bot_service.get_by_id_for_user(bot_id, current_user.id)
+    if bot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bot not found",
+        )
+
+    if bot.status == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Bot is already running",
+        )
+
+    if bot.status == "error":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Bot is in error state: {bot.error_message}",
+        )
+
+    # Update status
+    await bot_service.update_status(bot_id, "running")
+
+    # TODO: Trigger actual bot engine via Celery task
+    # from bot.tasks import start_trading_bot
+    # start_trading_bot.delay(str(bot_id))
+
+    return BotActionResponse(
+        bot_id=bot_id,
+        status="running",
+        message="Bot started successfully",
+    )
 
 
-@router.post("/{bot_id}/stop")
+@router.post("/{bot_id}/stop", response_model=BotActionResponse)
 async def stop_bot(
     bot_id: UUID,
     current_user: User = Depends(get_current_user),
-) -> dict[str, str]:
+    db: AsyncSession = Depends(get_db),
+) -> BotActionResponse:
     """
     Stop a running bot and cancel all open orders.
     """
-    # TODO: Implement stop bot (ensure bot belongs to current_user)
-    return {"status": "stopping", "bot_id": str(bot_id)}
+    bot_service = BotService(db)
+
+    bot = await bot_service.get_by_id_for_user(bot_id, current_user.id)
+    if bot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bot not found",
+        )
+
+    if bot.status == "stopped":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Bot is already stopped",
+        )
+
+    # Update status
+    await bot_service.update_status(bot_id, "stopped")
+
+    # TODO: Trigger bot shutdown via Celery/Redis
+    # from bot.tasks import stop_trading_bot
+    # stop_trading_bot.delay(str(bot_id))
+
+    return BotActionResponse(
+        bot_id=bot_id,
+        status="stopped",
+        message="Bot stopped successfully",
+    )
+
+
+@router.delete("/{bot_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_bot(
+    bot_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Delete a bot.
+
+    Bot must be stopped before deletion.
+    """
+    bot_service = BotService(db)
+
+    bot = await bot_service.get_by_id_for_user(bot_id, current_user.id)
+    if bot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bot not found",
+        )
+
+    if bot.status == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete a running bot. Stop it first.",
+        )
+
+    await bot_service.delete(bot_id, current_user.id)

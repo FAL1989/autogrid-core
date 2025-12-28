@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS exchange_credentials (
 CREATE TABLE IF NOT EXISTS bots (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    credential_id UUID REFERENCES exchange_credentials(id) ON DELETE SET NULL,
     name VARCHAR(100) NOT NULL,
     strategy VARCHAR(20) NOT NULL CHECK (strategy IN ('grid', 'dca')),
     exchange VARCHAR(50) NOT NULL,

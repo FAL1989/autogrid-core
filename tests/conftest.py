@@ -11,11 +11,18 @@ from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import NullPool
 
 from api.core.database import Base, get_db
-from api.models.orm import User
+from api.models.orm import Bot, ExchangeCredential, User
 from api.services.jwt import create_token_pair
 from api.services.security import hash_password
 from bot.strategies.base import Order
@@ -25,14 +32,6 @@ TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://postgres:postgres@localhost:5432/autogrid_test"
 )
-
-
-@pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    """Create event loop for async tests."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture
@@ -143,59 +142,73 @@ def dca_config() -> dict:
 # ===========================================
 
 
-@pytest.fixture(scope="session")
-async def test_engine():
-    """Create test database engine."""
+@pytest_asyncio.fixture
+async def db_session() -> AsyncGenerator[AsyncSession, None]:
+    """Create database session for testing.
+
+    Uses NullPool to avoid connection issues across different event loops.
+    Each test gets a fresh connection.
+    """
+    # Use NullPool to avoid connection pool issues with asyncpg
     engine = create_async_engine(
         TEST_DATABASE_URL,
         echo=False,
-        pool_pre_ping=True,
+        poolclass=NullPool,
     )
 
     # Create all tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    yield engine
-
-    # Drop all tables after tests
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-
-    await engine.dispose()
-
-
-@pytest.fixture
-async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
-    """Create database session with rollback for testing."""
-    async_session = async_sessionmaker(
-        test_engine,
+    async_session_factory = async_sessionmaker(
+        engine,
         class_=AsyncSession,
         expire_on_commit=False,
     )
 
-    async with async_session() as session:
+    async with async_session_factory() as session:
         yield session
-        # Rollback any uncommitted changes
-        await session.rollback()
+
+    # Clean up tables after each test
+    async with engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(table.delete())
+
+    await engine.dispose()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    """Create async HTTP client for API testing with test database."""
+    """Create async HTTP client for API testing with test database and Redis."""
+    import redis.asyncio as redis_async
+
+    from api.core.rate_limiter import get_redis
     from api.main import app
 
     # Override the database dependency
     async def override_get_db():
         yield db_session
 
+    # Create Redis client for tests (database 15)
+    test_redis = redis_async.from_url(
+        "redis://localhost:6379/15",
+        encoding="utf-8",
+        decode_responses=True,
+    )
+
+    async def override_get_redis():
+        return test_redis
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_redis] = override_get_redis
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
 
-    # Clean up overrides
+    # Clean up
+    await test_redis.flushdb()
+    await test_redis.aclose()
     app.dependency_overrides.clear()
 
 
@@ -204,7 +217,7 @@ async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, 
 # ===========================================
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_user(db_session: AsyncSession) -> User:
     """Create a test user in the database."""
     user = User(
@@ -214,7 +227,7 @@ async def test_user(db_session: AsyncSession) -> User:
         is_active=True,
     )
     db_session.add(user)
-    await db_session.commit()
+    await db_session.flush()
     await db_session.refresh(user)
     return user
 
@@ -225,14 +238,14 @@ def test_user_password() -> str:
     return "TestPassword123!"
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def auth_headers(test_user: User) -> dict[str, str]:
     """Create authentication headers with valid access token."""
     access_token, _ = create_token_pair(test_user.id)
     return {"Authorization": f"Bearer {access_token}"}
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def auth_client(
     async_client: AsyncClient,
     auth_headers: dict[str, str],
@@ -243,11 +256,87 @@ async def auth_client(
 
 
 # ===========================================
+# Bot Fixtures
+# ===========================================
+
+
+@pytest_asyncio.fixture
+async def test_credential(db_session: AsyncSession, test_user: User) -> ExchangeCredential:
+    """Create a test exchange credential."""
+    credential = ExchangeCredential(
+        user_id=test_user.id,
+        exchange="binance",
+        api_key_encrypted="encrypted_test_key",
+        api_secret_encrypted="encrypted_test_secret",
+        is_testnet=True,
+    )
+    db_session.add(credential)
+    await db_session.flush()
+    await db_session.refresh(credential)
+    return credential
+
+
+@pytest_asyncio.fixture
+async def test_bot(
+    db_session: AsyncSession,
+    test_user: User,
+    test_credential: ExchangeCredential,
+) -> Bot:
+    """Create a test bot with stopped status."""
+    bot = Bot(
+        user_id=test_user.id,
+        credential_id=test_credential.id,
+        name="Test Grid Bot",
+        strategy="grid",
+        exchange="binance",
+        symbol="BTC/USDT",
+        config={
+            "lower_price": 45000.0,
+            "upper_price": 55000.0,
+            "grid_count": 10,
+            "investment": 1000.0,
+        },
+        status="stopped",
+    )
+    db_session.add(bot)
+    await db_session.flush()
+    await db_session.refresh(bot)
+    return bot
+
+
+@pytest_asyncio.fixture
+async def running_bot(
+    db_session: AsyncSession,
+    test_user: User,
+    test_credential: ExchangeCredential,
+) -> Bot:
+    """Create a test bot with running status."""
+    bot = Bot(
+        user_id=test_user.id,
+        credential_id=test_credential.id,
+        name="Running DCA Bot",
+        strategy="dca",
+        exchange="binance",
+        symbol="ETH/USDT",
+        config={
+            "amount": 100.0,
+            "interval": "daily",
+            "trigger_drop": 5.0,
+        },
+        status="running",
+    )
+    db_session.add(bot)
+    await db_session.flush()
+    await db_session.refresh(bot)
+    return bot
+
+
+# ===========================================
 # Redis Fixtures
 # ===========================================
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def redis_client():
     """Create Redis client for testing."""
     import redis.asyncio as redis
