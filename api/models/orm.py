@@ -181,7 +181,7 @@ class Bot(Base):
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="bots")
-    credential: Mapped["ExchangeCredential"] = relationship(back_populates="bots")
+    credential: Mapped["ExchangeCredential | None"] = relationship(back_populates="bots")
 
 
 class Backtest(Base):
