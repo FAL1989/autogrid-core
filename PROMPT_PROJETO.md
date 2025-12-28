@@ -69,7 +69,8 @@ AutoGrid/
 │   ├── routes/
 │   │   ├── auth.py                   # Registro, login, refresh, /me
 │   │   ├── bots.py                   # CRUD de bots + start/stop
-│   │   └── backtest.py               # Executar backtests
+│   │   ├── backtest.py               # Executar backtests
+│   │   └── credentials.py            # ✅ NOVO - CRUD de credenciais + validação
 │   ├── models/
 │   │   ├── schemas.py                # Schemas Pydantic (User, Bot, Order)
 │   │   └── orm.py                    # ✅ NOVO - SQLAlchemy ORM models
@@ -78,7 +79,9 @@ AutoGrid/
 │       ├── security.py               # Hash de senhas (bcrypt)
 │       ├── jwt.py                    # Criação/validação JWT
 │       ├── user_service.py           # CRUD de usuários
-│       └── bot_service.py            # ✅ NOVO - CRUD de bots
+│       ├── bot_service.py            # ✅ CRUD de bots
+│       ├── encryption.py             # ✅ NOVO - Criptografia Fernet
+│       └── credential_service.py     # ✅ NOVO - Gerenciamento de credenciais
 │
 ├── bot/                              # Engine de Trading
 │   ├── __init__.py
@@ -284,11 +287,11 @@ make docker-up
 - [x] Conectar rotas aos services (6 endpoints funcionais)
 - [x] Validar permissões por usuário (ownership check)
 
-#### 4. Implementar Conexão com Exchange
-- [ ] Validar credenciais na criação
-- [ ] Verificar permissões (trade sim, withdraw não)
-- [ ] Criptografar API keys (Fernet)
-- [ ] Implementar refresh de markets
+#### 4. Implementar Conexão com Exchange ✅
+- [x] Validar credenciais na criação
+- [x] Verificar permissões (trade sim, withdraw não)
+- [x] Criptografar API keys (Fernet)
+- [x] Implementar refresh de markets
 
 ### Sprint 2 - Core Trading
 
@@ -464,5 +467,5 @@ TELEGRAM_CHAT_ID=
 ---
 
 *Prompt gerado em: Dezembro 2025*
-*Última atualização: 28/12/2025 - CRUD de Bots implementado*
-*Versão: 1.2.0*
+*Última atualização: 28/12/2025 - Conexão com Exchange implementada (validação, criptografia, permissões)*
+*Versão: 1.3.0*
