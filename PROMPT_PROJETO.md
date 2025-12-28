@@ -161,15 +161,19 @@ AutoGrid/
 
 ---
 
-## Funcionalidades Implementadas (Stubs)
+## Funcionalidades Implementadas
 
 ### API (FastAPI)
 - [x] Health check endpoint
 - [x] CORS configurado
-- [x] Rotas de autenticação (register, login, refresh)
-- [x] CRUD de bots (list, get, create, update, delete)
-- [x] Start/Stop de bots
-- [x] Endpoint de backtest
+- [x] ✅ **Autenticação completa** (register, login, refresh, /me)
+- [x] ✅ **JWT tokens** com access/refresh
+- [x] ✅ **Password hashing** com bcrypt
+- [x] ✅ **SQLAlchemy ORM** com PostgreSQL async
+- [x] ✅ **Middleware de autenticação** (get_current_user)
+- [x] CRUD de bots (list, get, create, update, delete) - protegido com auth
+- [x] Start/Stop de bots - protegido com auth
+- [x] Endpoint de backtest - protegido com auth
 - [x] Schemas Pydantic completos
 
 ### Bot Engine
@@ -208,7 +212,7 @@ AutoGrid/
 ### Tabelas Criadas
 | Tabela | Descrição | Hypertable |
 |--------|-----------|------------|
-| users | Usuários com planos (free/pro/enterprise) | Não |
+| users | Usuários com planos (free/starter/pro/enterprise) | Não |
 | exchange_credentials | Credenciais criptografadas | Não |
 | bots | Configuração dos bots | Não |
 | orders | Ordens de compra/venda | Não |
@@ -457,4 +461,5 @@ TELEGRAM_CHAT_ID=
 ---
 
 *Prompt gerado em: Dezembro 2025*
-*Versão: 1.0.0*
+*Última atualização: 28/12/2025 - Autenticação implementada*
+*Versão: 1.1.0*
