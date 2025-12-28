@@ -152,3 +152,85 @@ class TestBotsEndpoints:
         data = response.json()
         assert data["name"] == "Test DCA Bot"
         assert data["strategy"] == "dca"
+
+
+@pytest.mark.asyncio
+class TestCredentialsEndpoints:
+    """Tests for credentials management endpoints."""
+
+    async def test_list_credentials_requires_auth(
+        self, async_client: AsyncClient
+    ) -> None:
+        """Test listing credentials requires authentication."""
+        response = await async_client.get("/credentials/")
+
+        assert response.status_code == 401
+
+    async def test_list_credentials_empty(self, auth_client: AsyncClient) -> None:
+        """Test listing credentials when none exist."""
+        response = await auth_client.get("/credentials/")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["credentials"] == []
+        assert data["total"] == 0
+
+    async def test_get_credential_not_found(self, auth_client: AsyncClient) -> None:
+        """Test getting non-existent credential."""
+        fake_id = "00000000-0000-0000-0000-000000000000"
+        response = await auth_client.get(f"/credentials/{fake_id}")
+
+        assert response.status_code == 404
+
+    async def test_delete_credential_not_found(self, auth_client: AsyncClient) -> None:
+        """Test deleting non-existent credential."""
+        fake_id = "00000000-0000-0000-0000-000000000000"
+        response = await auth_client.delete(f"/credentials/{fake_id}")
+
+        assert response.status_code == 404
+
+    async def test_get_credential_success(
+        self,
+        auth_client: AsyncClient,
+        test_credential: ExchangeCredential,
+    ) -> None:
+        """Test getting an existing credential."""
+        response = await auth_client.get(f"/credentials/{test_credential.id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == str(test_credential.id)
+        assert data["exchange"] == test_credential.exchange
+        # Verify secrets are NOT returned
+        assert "api_key" not in data
+        assert "api_secret" not in data
+        assert "api_key_encrypted" not in data
+        assert "api_secret_encrypted" not in data
+
+    async def test_list_credentials_with_data(
+        self,
+        auth_client: AsyncClient,
+        test_credential: ExchangeCredential,
+    ) -> None:
+        """Test listing credentials when one exists."""
+        response = await auth_client.get("/credentials/")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 1
+        assert len(data["credentials"]) == 1
+        assert data["credentials"][0]["id"] == str(test_credential.id)
+
+    async def test_delete_credential_success(
+        self,
+        auth_client: AsyncClient,
+        test_credential: ExchangeCredential,
+    ) -> None:
+        """Test deleting an existing credential."""
+        response = await auth_client.delete(f"/credentials/{test_credential.id}")
+
+        assert response.status_code == 204
+
+        # Verify it's gone
+        response = await auth_client.get(f"/credentials/{test_credential.id}")
+        assert response.status_code == 404

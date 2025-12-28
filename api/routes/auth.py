@@ -73,8 +73,8 @@ class RefreshRequest(BaseModel):
 )
 async def register(
     user: UserRegister,
-    db: AsyncSession = Depends(get_db),
     _rate_limit: RateLimitAuth,
+    db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     """
     Register a new user.
@@ -118,8 +118,8 @@ async def register(
 )
 async def login(
     credentials: UserLogin,
-    db: AsyncSession = Depends(get_db),
     _rate_limit: RateLimitAuth,
+    db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     """
     Authenticate user and return tokens.

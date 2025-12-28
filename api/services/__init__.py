@@ -1,6 +1,15 @@
 """API Services Package."""
 
 from api.services.bot_service import BotService
+from api.services.credential_service import (
+    CredentialService,
+    CredentialValidationError,
+)
+from api.services.encryption import (
+    EncryptionError,
+    EncryptionService,
+    get_encryption_service,
+)
 from api.services.jwt import (
     TokenError,
     TokenPayload,
@@ -25,8 +34,15 @@ __all__ = [
     # Security
     "hash_password",
     "verify_password",
+    # Encryption
+    "EncryptionService",
+    "EncryptionError",
+    "get_encryption_service",
     # User Service
     "UserService",
     # Bot Service
     "BotService",
+    # Credential Service
+    "CredentialService",
+    "CredentialValidationError",
 ]

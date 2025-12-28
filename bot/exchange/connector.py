@@ -7,10 +7,21 @@ Provides unified interface for all supported exchanges.
 
 import logging
 from abc import ABC, abstractmethod
-from decimal import Decimal
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ValidationResult:
+    """Result of credential validation."""
+
+    is_valid: bool
+    can_trade: bool
+    can_withdraw: bool
+    markets: list[str] = field(default_factory=list)
+    error: str | None = None
 
 
 class ExchangeConnector(ABC):
@@ -261,3 +272,119 @@ class CCXTConnector(ExchangeConnector):
     ) -> list[list]:
         """Fetch OHLCV via CCXT."""
         return await self._exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+
+    async def validate_credentials(self) -> ValidationResult:
+        """
+        Validate API credentials and detect permissions.
+
+        Connects to exchange, loads markets, and tests permissions.
+
+        Returns:
+            ValidationResult with validation status and permissions.
+        """
+        try:
+            import ccxt.async_support as ccxt
+
+            exchange_class = getattr(ccxt, self.exchange_id)
+            self._exchange = exchange_class({
+                "apiKey": self.api_key,
+                "secret": self.api_secret,
+                "sandbox": self.testnet,
+                "enableRateLimit": True,
+            })
+
+            # Load markets
+            await self._exchange.load_markets()
+            markets = list(self._exchange.markets.keys())
+
+            # Test READ permission via fetch_balance
+            can_trade = False
+            can_withdraw = False
+
+            try:
+                await self._exchange.fetch_balance()
+                # If we can read balance, we have at least read permission
+                # Assume trade is enabled (most common case)
+                can_trade = True
+            except ccxt.PermissionDenied:
+                can_trade = False
+            except ccxt.AuthenticationError as e:
+                await self._exchange.close()
+                return ValidationResult(
+                    is_valid=False,
+                    can_trade=False,
+                    can_withdraw=False,
+                    markets=[],
+                    error=f"Authentication failed: {str(e)}",
+                )
+
+            # Check withdraw permission (exchange-specific)
+            can_withdraw = await self._check_withdraw_permission()
+
+            await self._exchange.close()
+
+            return ValidationResult(
+                is_valid=True,
+                can_trade=can_trade,
+                can_withdraw=can_withdraw,
+                markets=markets,
+            )
+
+        except Exception as e:
+            if self._exchange:
+                try:
+                    await self._exchange.close()
+                except Exception:
+                    pass
+            return ValidationResult(
+                is_valid=False,
+                can_trade=False,
+                can_withdraw=False,
+                markets=[],
+                error=f"Validation error: {str(e)}",
+            )
+
+    async def _check_withdraw_permission(self) -> bool:
+        """
+        Check if API key has withdraw permission.
+
+        Uses exchange-specific APIs where available.
+        Returns True if withdraw is enabled, False otherwise.
+        """
+        try:
+            if self.exchange_id == "binance":
+                # Binance has a specific endpoint to check API key permissions
+                # GET /sapi/v1/account/apiRestrictions
+                result = await self._exchange.sapi_get_account_apirestrictions()
+                return result.get("enableWithdrawals", False)
+
+            elif self.exchange_id == "bybit":
+                # Bybit: /v5/user/query-api
+                result = await self._exchange.private_get_v5_user_query_api()
+                permissions = result.get("result", {}).get("permissions", {})
+                wallet_perms = permissions.get("Wallet", [])
+                return "Withdrawal" in wallet_perms if isinstance(wallet_perms, list) else False
+
+            # MEXC and others: no direct API, assume False (safe default)
+            return False
+
+        except Exception as e:
+            logger.debug(f"Could not check withdraw permission: {e}")
+            # If we can't determine, assume False (safe)
+            return False
+
+    async def refresh_markets(self) -> list[str]:
+        """
+        Refresh and return available markets from exchange.
+
+        Returns:
+            List of market symbols (e.g., ['BTC/USDT', 'ETH/USDT']).
+
+        Raises:
+            RuntimeError: If not connected to exchange.
+        """
+        if not self._connected:
+            raise RuntimeError("Not connected to exchange")
+
+        await self._exchange.load_markets(reload=True)
+        return list(self._exchange.markets.keys())

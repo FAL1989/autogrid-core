@@ -10,6 +10,13 @@ from decimal import Decimal
 from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, MagicMock
 
+# Set test environment variables BEFORE any api imports
+from cryptography.fernet import Fernet
+if not os.getenv("ENCRYPTION_KEY"):
+    os.environ["ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+if not os.getenv("JWT_SECRET"):
+    os.environ["JWT_SECRET"] = "test-jwt-secret-key-for-testing-only"
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -269,6 +276,7 @@ async def test_credential(db_session: AsyncSession, test_user: User) -> Exchange
         api_key_encrypted="encrypted_test_key",
         api_secret_encrypted="encrypted_test_secret",
         is_testnet=True,
+        permissions={"trade": True, "withdraw": False, "is_safe": True},
     )
     db_session.add(credential)
     await db_session.flush()

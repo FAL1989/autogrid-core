@@ -16,7 +16,7 @@ from sqlalchemy import text
 from api.core.config import get_settings
 from api.core.database import close_db, engine
 from api.core.rate_limiter import close_redis, init_redis
-from api.routes import auth, backtest, bots
+from api.routes import auth, backtest, bots, credentials
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +86,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(bots.router, prefix="/bots", tags=["Bots"])
 app.include_router(backtest.router, prefix="/backtest", tags=["Backtesting"])
+app.include_router(credentials.router, prefix="/credentials", tags=["Credentials"])
 
 
 @app.get("/", tags=["Health"])
