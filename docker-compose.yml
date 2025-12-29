@@ -14,7 +14,7 @@ services:
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - JWT_SECRET=${JWT_SECRET}
       - API_DEBUG=true
-      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://0.0.0.0:3000,http://web:3000
     depends_on:
       postgres:
         condition: service_healthy

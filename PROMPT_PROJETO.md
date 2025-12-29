@@ -353,11 +353,11 @@ make docker-up
 - [x] ✅ Implementar WebSocket para updates real-time (ws_manager, ws-context, use-realtime hooks)
 - [x] ✅ Adicionar loading states e error handling (skeleton, error-boundary, toast, spinner)
 
-#### 9. Implementar Dashboard Real
-- [ ] Conectar stats cards com API
-- [ ] Gráfico de P&L real
-- [ ] Lista de bots com status real-time
-- [ ] Histórico de trades
+#### 9. Implementar Dashboard Real ✅
+- [x] ✅ Conectar stats cards com API (`web/components/dashboard/stats-cards.tsx`, `web/hooks/use-dashboard.ts`)
+- [x] ✅ Gráfico de P&L real (`web/components/dashboard/pnl-chart.tsx`, `web/hooks/use-dashboard.ts`)
+- [x] ✅ Lista de bots com status real-time (WebSocket invalidations em `web/lib/websocket/ws-context.tsx`)
+- [x] ✅ Histórico de trades (`web/app/dashboard/trades/page.tsx`, `web/hooks/use-trades.ts`)
 
 #### 10. Implementar Visualização de Grid
 - [ ] Componente de visualização do grid

@@ -336,6 +336,15 @@ class BotEngine:
             # Update realized P&L from strategy
             self._state.realized_pnl = self.strategy.realized_pnl
 
+            # Broadcast P&L update via WebSocket
+            from api.core.ws_manager import broadcast_pnl_update
+            await broadcast_pnl_update(
+                user_id=str(self.config.user_id),
+                bot_id=str(self.config.id),
+                realized_pnl=float(self._state.realized_pnl),
+                unrealized_pnl=0.0
+            )
+
         # Record P&L in circuit breaker (losses trigger safety checks)
         if self.circuit_breaker and realized_pnl < 0:
             await self.circuit_breaker.record_pnl(self.config.id, realized_pnl)

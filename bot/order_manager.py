@@ -604,6 +604,21 @@ class OrderManager:
             if order.can_transition_to(OrderState.FILLED):
                 self._transition_state(order, OrderState.FILLED)
                 order.filled_at = datetime.now(timezone.utc)
+
+                # Broadcast order update via WebSocket
+                from api.core.ws_manager import broadcast_order_update
+                user_id = await self._cache_bot_user(order.bot_id)
+                await broadcast_order_update(
+                    user_id=str(user_id),
+                    bot_id=str(order.bot_id),
+                    order={
+                        "id": str(order.id),
+                        "status": order.state.value,
+                        "filled_quantity": float(order.filled_quantity),
+                        "average_fill_price": float(order.average_fill_price or 0)
+                    }
+                )
+
                 if self.on_order_filled:
                     self.on_order_filled(order)
 
@@ -652,3 +667,21 @@ class OrderManager:
             filled_at=db_order.filled_at,
             updated_at=db_order.updated_at,
         )
+
+    async def _cache_bot_user(self, bot_id: UUID) -> UUID:
+        """
+        Cache and return user_id for a given bot_id.
+
+        Args:
+            bot_id: The bot ID to lookup
+
+        Returns:
+            The user_id that owns the bot
+        """
+        if bot_id not in self._bot_user_cache:
+            from api.models.orm import Bot
+            stmt = select(Bot.user_id).where(Bot.id == bot_id)
+            result = await self.db_session.execute(stmt)
+            user_id = result.scalar_one()
+            self._bot_user_cache[bot_id] = user_id
+        return self._bot_user_cache[bot_id]

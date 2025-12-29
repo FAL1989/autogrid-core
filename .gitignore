@@ -74,6 +74,15 @@ htmlcov/
 tmp/
 temp/
 *.tmp
+*.bak
+
+# Screenshots
+*.png
+*.jpg
+*.jpeg
+
+# Broken builds
+.next-broken/
 
 # Claude AI
 .claude/

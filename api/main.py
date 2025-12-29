@@ -84,11 +84,13 @@ app.add_middleware(
 )
 
 # Include routers
+# Auth routes without prefix (for backwards compatibility)
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
-app.include_router(bots.router, prefix="/bots", tags=["Bots"])
-app.include_router(backtest.router, prefix="/backtest", tags=["Backtesting"])
-app.include_router(credentials.router, prefix="/credentials", tags=["Credentials"])
-app.include_router(orders.router, prefix="/orders", tags=["Orders"])
+# API v1 routes
+app.include_router(bots.router, prefix="/api/v1/bots", tags=["Bots"])
+app.include_router(backtest.router, prefix="/api/v1/backtest", tags=["Backtesting"])
+app.include_router(credentials.router, prefix="/api/v1/credentials", tags=["Credentials"])
+app.include_router(orders.router, prefix="/api/v1/orders", tags=["Orders"])
 app.include_router(ws.router, tags=["WebSocket"])
 
 

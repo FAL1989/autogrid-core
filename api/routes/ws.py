@@ -38,20 +38,19 @@ async def authenticate_websocket(token: str) -> str:
         payload = decode_token(token)
 
         # Verify it's an access token
-        if payload.get("type") != "access":
+        if payload.type != "access":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token type",
             )
 
-        user_id = payload.get("sub")
-        if not user_id:
+        if not payload.sub:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload",
             )
 
-        return user_id
+        return payload.sub
 
     except TokenError as e:
         raise HTTPException(
