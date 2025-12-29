@@ -127,6 +127,7 @@ class ManagedOrder:
     submitted_at: datetime | None = None
     filled_at: datetime | None = None
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    grid_level: int | None = None  # Grid level index for grid strategies
 
     @property
     def is_terminal(self) -> bool:

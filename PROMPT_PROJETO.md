@@ -137,15 +137,17 @@ AutoGrid/
 │   ├── .eslintrc.json
 │   └── Dockerfile
 │
-├── tests/                            # Testes Automatizados (177 testes)
+├── tests/                            # Testes Automatizados (203 testes)
 │   ├── conftest.py                   # Fixtures pytest (mock exchange, orders, auth, bots)
 │   ├── pytest.ini                    # Configuração pytest-asyncio
 │   ├── unit/
 │   │   ├── test_strategies.py        # Testes Grid e DCA
 │   │   ├── test_auth.py              # ✅ Testes de autenticação (17 testes)
 │   │   ├── test_bots.py              # ✅ Testes de CRUD bots (21 testes)
-│   │   ├── test_order_manager.py     # ✅ NOVO - Testes OrderManager (47 testes)
-│   │   └── test_circuit_breaker.py   # ✅ NOVO - Testes CircuitBreaker (38 testes)
+│   │   ├── test_credentials.py       # ✅ Testes de credenciais
+│   │   ├── test_order_manager.py     # ✅ Testes OrderManager (47 testes)
+│   │   ├── test_circuit_breaker.py   # ✅ Testes CircuitBreaker (38 testes)
+│   │   └── test_grid_strategy_complete.py  # ✅ NOVO - Testes Grid completo (26 testes)
 │   └── integration/
 │       └── test_api.py               # Testes de API (32 testes) + Orders endpoints
 │
@@ -195,8 +197,9 @@ AutoGrid/
 
 ### Bot Engine
 - [x] BaseStrategy ABC com métodos abstratos
-- [x] Order dataclass com status tracking
+- [x] Order dataclass com status tracking + grid_level
 - [x] GridStrategy com cálculo de grid levels
+- [x] ✅ **GridStrategy completo** (buy+sell bidirecional, GridLevel, position tracking)
 - [x] DCAStrategy com triggers de tempo e preço
 - [x] ExchangeConnector ABC
 - [x] CCXTConnector implementado
@@ -205,7 +208,8 @@ AutoGrid/
 - [x] ✅ **CircuitBreaker** (50 orders/min, 5% loss/hour, 10% price deviation)
 - [x] ✅ **WebSocketManager** para Binance e Bybit
 - [x] ✅ **Retry com exponential backoff** no connector
-- [x] ✅ **Celery tasks** para start/stop de bots
+- [x] ✅ **Celery tasks** para start/stop de bots + sync_bot_metrics (30s)
+- [x] ✅ **P&L Pipeline** (strategy → engine → circuit_breaker → database)
 
 ### Frontend (Next.js)
 - [x] Landing page
@@ -321,11 +325,15 @@ make docker-up
 - [x] ✅ API endpoints para ordens e trades
 - [x] ✅ 85 testes unitários e integração
 
-#### 6. Implementar Grid Trading Completo
-- [ ] Colocar ordens iniciais
-- [ ] Monitorar fills via WebSocket
-- [ ] Recriar ordens após fill
-- [ ] Calcular P&L em tempo real
+#### 6. Implementar Grid Trading Completo ✅
+- [x] ✅ Colocar ordens iniciais (buy + sell bidirecional)
+- [x] ✅ Monitorar fills via WebSocket
+- [x] ✅ Recriar ordens após fill (contra-ordens automáticas)
+- [x] ✅ Calcular P&L em tempo real com persistência
+- [x] ✅ GridLevel dataclass para tracking por nível
+- [x] ✅ Celery task sync_bot_metrics (30s)
+- [x] ✅ P&L no BotResponse da API
+- [x] ✅ 26 testes unitários do grid completo
 
 #### 7. Implementar DCA Completo
 - [ ] Scheduler para compras periódicas
@@ -495,5 +503,5 @@ TELEGRAM_CHAT_ID=
 ---
 
 *Prompt gerado em: Dezembro 2025*
-*Última atualização: 28/12/2025 - Sprint 2 Item 5 completo (OrderManager, CircuitBreaker, WebSocket, Celery tasks)*
-*Versão: 1.4.0*
+*Última atualização: 28/12/2025 - Sprint 2 Item 6 completo (Grid Trading bidirecional, P&L pipeline, sync_bot_metrics)*
+*Versão: 1.5.0*

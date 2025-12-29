@@ -170,6 +170,16 @@ class Bot(Base):
         Text,
         nullable=True,
     )
+    realized_pnl: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        default=Decimal("0"),
+        nullable=False,
+    )
+    unrealized_pnl: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        default=Decimal("0"),
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("NOW()"),

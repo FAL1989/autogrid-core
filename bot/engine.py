@@ -205,6 +205,7 @@ class BotEngine:
                     quantity=mo.quantity,
                     status="open" if mo.is_active else mo.state.value,
                     exchange_id=mo.exchange_id,
+                    grid_level=mo.grid_level,
                 )
                 for mo in managed_orders
             ]
@@ -263,6 +264,7 @@ class BotEngine:
                 order_type=order.type,
                 quantity=order.quantity,
                 price=order.price,
+                grid_level=order.grid_level,
             )
 
             try:
@@ -312,28 +314,31 @@ class BotEngine:
         else:
             self._position[symbol_base] = current_position - order.filled_quantity
 
-        # Calculate realized P&L if this closes a position
+        # Notify strategy and get realized P&L
+        realized_pnl = Decimal("0")
         if order.average_fill_price:
-            # Notify strategy
+            # Convert ManagedOrder to strategy Order
             strategy_order = Order(
                 id=order.id,
                 side=order.side,
                 type=order.order_type,
                 price=order.price,
-                quantity=order.quantity,
+                quantity=order.filled_quantity,
                 status="filled",
                 exchange_id=order.exchange_id,
+                grid_level=order.grid_level,
             )
-            self.strategy.on_order_filled(strategy_order, order.average_fill_price)
+            # Strategy returns realized P&L (0 for buys, profit/loss for sells)
+            realized_pnl = self.strategy.on_order_filled(
+                strategy_order, order.average_fill_price
+            )
 
             # Update realized P&L from strategy
             self._state.realized_pnl = self.strategy.realized_pnl
 
-        # Record P&L in circuit breaker
-        if self.circuit_breaker:
-            # If we have a loss, record it
-            # (simplified - real P&L calculation would be more complex)
-            pass
+        # Record P&L in circuit breaker (losses trigger safety checks)
+        if self.circuit_breaker and realized_pnl < 0:
+            await self.circuit_breaker.record_pnl(self.config.id, realized_pnl)
 
         # Callback
         if self.on_order_filled:
@@ -341,7 +346,8 @@ class BotEngine:
 
         logger.info(
             f"Order filled: {order.id} - "
-            f"Position: {self._position.get(symbol_base, 0)} {symbol_base}"
+            f"Position: {self._position.get(symbol_base, 0)} {symbol_base} - "
+            f"P&L: {realized_pnl}"
         )
 
     async def _handle_circuit_trip(self) -> None:

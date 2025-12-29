@@ -73,6 +73,7 @@ class BotResponse(BaseModel):
     symbol: str
     status: str
     realized_pnl: float
+    unrealized_pnl: float
     config: dict
     created_at: datetime
     updated_at: datetime
@@ -160,7 +161,8 @@ async def create_bot(
         exchange=new_bot.exchange,
         symbol=new_bot.symbol,
         status=new_bot.status,
-        realized_pnl=0.0,
+        realized_pnl=float(new_bot.realized_pnl),
+        unrealized_pnl=float(new_bot.unrealized_pnl),
         config=new_bot.config,
         created_at=new_bot.created_at,
         updated_at=new_bot.updated_at,
@@ -191,7 +193,8 @@ async def list_bots(
             exchange=bot.exchange,
             symbol=bot.symbol,
             status=bot.status,
-            realized_pnl=0.0,  # TODO: Calculate from bot_metrics
+            realized_pnl=float(bot.realized_pnl),
+            unrealized_pnl=float(bot.unrealized_pnl),
             config=bot.config,
             created_at=bot.created_at,
             updated_at=bot.updated_at,
@@ -232,7 +235,8 @@ async def get_bot(
         exchange=bot.exchange,
         symbol=bot.symbol,
         status=bot.status,
-        realized_pnl=0.0,  # TODO: Calculate from bot_metrics
+        realized_pnl=float(bot.realized_pnl),
+        unrealized_pnl=float(bot.unrealized_pnl),
         config=bot.config,
         created_at=bot.created_at,
         updated_at=bot.updated_at,

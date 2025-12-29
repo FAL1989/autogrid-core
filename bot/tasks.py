@@ -55,6 +55,10 @@ celery_app.conf.beat_schedule = {
         "task": "bot.tasks.check_circuit_breakers",
         "schedule": 10.0,  # Every 10 seconds
     },
+    "sync-bot-metrics-every-30s": {
+        "task": "bot.tasks.sync_running_bots_metrics",
+        "schedule": 30.0,  # Every 30 seconds
+    },
     "cleanup-old-data-daily": {
         "task": "bot.tasks.cleanup_old_data",
         "schedule": crontab(hour=3, minute=0),  # Daily at 3 AM UTC
@@ -532,6 +536,127 @@ def check_bot_health(self) -> dict:
             unhealthy += 1
 
     return {"status": "ok", "healthy": healthy, "unhealthy": unhealthy}
+
+
+@celery_app.task(bind=True)
+def sync_running_bots_metrics(self) -> dict:
+    """
+    Sync metrics for all running bots.
+
+    Iterates through all running bots and updates their P&L in the database.
+    """
+    synced = 0
+    errors = 0
+
+    for bot_id in list(_running_bots.keys()):
+        try:
+            sync_bot_metrics.delay(bot_id)
+            synced += 1
+        except Exception as e:
+            logger.error(f"Failed to queue metrics sync for bot {bot_id}: {e}")
+            errors += 1
+
+    return {"status": "ok", "synced": synced, "errors": errors}
+
+
+@celery_app.task(bind=True, max_retries=3)
+def sync_bot_metrics(self, bot_id: str) -> dict:
+    """
+    Sync metrics for a single bot.
+
+    Updates realized and unrealized P&L in the database.
+
+    Args:
+        bot_id: The bot ID to sync metrics for
+
+    Returns:
+        Dict with sync result
+    """
+    try:
+        result = _run_async(_sync_bot_metrics_async(bot_id))
+        return result
+    except Exception as e:
+        logger.error(f"Failed to sync metrics for bot {bot_id}: {e}")
+        raise self.retry(exc=e, countdown=10)
+
+
+async def _sync_bot_metrics_async(bot_id: str) -> dict:
+    """Async implementation of bot metrics sync."""
+    from sqlalchemy import select, update
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from api.core.config import get_settings
+    from api.models.orm import Bot
+    from bot.strategies.grid import GridStrategy
+
+    bot_data = _running_bots.get(bot_id)
+    if not bot_data:
+        return {"status": "not_running", "bot_id": bot_id}
+
+    connector = bot_data.get("connector")
+    symbol = bot_data.get("symbol")
+
+    # Get strategy from running bot (if we have a BotEngine)
+    # For now, we calculate basic metrics from order manager
+    order_manager = bot_data.get("order_manager")
+    if not order_manager:
+        return {"status": "error", "message": "No order manager"}
+
+    # Get current price for unrealized P&L calculation
+    current_price = Decimal("0")
+    if connector and symbol:
+        try:
+            ticker = await connector.fetch_ticker(symbol)
+            current_price = Decimal(str(ticker["last"]))
+        except Exception as e:
+            logger.warning(f"Failed to fetch ticker for {symbol}: {e}")
+
+    # Calculate realized P&L from filled orders
+    # This is a simplified calculation - the real P&L comes from the strategy
+    realized_pnl = Decimal("0")
+    unrealized_pnl = Decimal("0")
+
+    # If we have a GridStrategy, get P&L from it
+    engine_data = bot_data.get("engine")
+    if engine_data and hasattr(engine_data, "strategy"):
+        strategy = engine_data.strategy
+        realized_pnl = strategy.realized_pnl
+
+        # Calculate unrealized P&L for grid strategy
+        if isinstance(strategy, GridStrategy) and current_price > 0:
+            unrealized_pnl = strategy.get_unrealized_pnl(current_price)
+
+    # Update in database
+    settings = get_settings()
+    engine = create_async_engine(settings.async_database_url)
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with async_session() as db:
+        stmt = (
+            update(Bot)
+            .where(Bot.id == UUID(bot_id))
+            .values(
+                realized_pnl=realized_pnl,
+                unrealized_pnl=unrealized_pnl,
+            )
+        )
+        await db.execute(stmt)
+        await db.commit()
+
+    await engine.dispose()
+
+    logger.debug(
+        f"Synced metrics for bot {bot_id}: "
+        f"realized={realized_pnl}, unrealized={unrealized_pnl}"
+    )
+
+    return {
+        "status": "ok",
+        "bot_id": bot_id,
+        "realized_pnl": str(realized_pnl),
+        "unrealized_pnl": str(unrealized_pnl),
+    }
 
 
 # =============================================================================

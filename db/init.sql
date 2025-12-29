@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS bots (
     config JSONB NOT NULL,
     status VARCHAR(20) DEFAULT 'stopped' CHECK (status IN ('stopped', 'running', 'paused', 'error')),
     error_message TEXT,
+    realized_pnl DECIMAL(20, 8) DEFAULT 0 NOT NULL,
+    unrealized_pnl DECIMAL(20, 8) DEFAULT 0 NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -179,3 +181,11 @@ SELECT add_compression_policy('ohlcv_cache', INTERVAL '7 days', if_not_exists =>
 -- Retention policy (delete data older than 1 year for free tier, enterprise keeps all)
 -- This should be managed per-user based on their plan
 -- SELECT add_retention_policy('trades', INTERVAL '1 year');
+
+-- =============================================================================
+-- Migrations for existing databases
+-- =============================================================================
+
+-- Add P&L columns to bots table (for existing databases)
+ALTER TABLE bots ADD COLUMN IF NOT EXISTS realized_pnl DECIMAL(20, 8) DEFAULT 0 NOT NULL;
+ALTER TABLE bots ADD COLUMN IF NOT EXISTS unrealized_pnl DECIMAL(20, 8) DEFAULT 0 NOT NULL;

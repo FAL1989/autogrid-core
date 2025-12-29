@@ -4,9 +4,10 @@ Bot Service.
 Business logic for bot operations including CRUD and state management.
 """
 
+from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.orm import Bot, ExchangeCredential
@@ -156,6 +157,37 @@ class BotService:
         bot.error_message = error_message
         await self.db.flush()
         return True
+
+    async def update_pnl(
+        self,
+        bot_id: UUID,
+        realized_pnl: Decimal,
+        unrealized_pnl: Decimal | None = None,
+    ) -> bool:
+        """
+        Update bot P&L values.
+
+        Called periodically by Celery tasks to sync P&L from running bots.
+
+        Args:
+            bot_id: The bot's UUID.
+            realized_pnl: Total realized profit/loss.
+            unrealized_pnl: Current unrealized profit/loss (optional).
+
+        Returns:
+            True if updated, False if bot not found.
+        """
+        stmt = (
+            update(Bot)
+            .where(Bot.id == bot_id)
+            .values(
+                realized_pnl=realized_pnl,
+                unrealized_pnl=unrealized_pnl if unrealized_pnl is not None else Decimal("0"),
+            )
+        )
+        result = await self.db.execute(stmt)
+        await self.db.flush()
+        return result.rowcount > 0
 
     async def get_credential_for_user(
         self,

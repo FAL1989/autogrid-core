@@ -25,6 +25,7 @@ class Order:
         quantity: Order quantity
         status: Current order status
         exchange_id: ID from the exchange after placement
+        grid_level: Index of grid level (for grid strategies)
     """
 
     side: Literal["buy", "sell"]
@@ -34,6 +35,7 @@ class Order:
     id: UUID = field(default_factory=uuid4)
     status: Literal["pending", "open", "filled", "cancelled", "error"] = "pending"
     exchange_id: str | None = None
+    grid_level: int | None = None  # Grid level index for position tracking
 
     def __repr__(self) -> str:
         return (
