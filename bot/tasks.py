@@ -261,6 +261,15 @@ async def _start_bot_async(bot_id: str) -> dict:
         bot.error_message = None
         await db.commit()
 
+        # Broadcast bot status update via WebSocket
+        from api.core.ws_manager import broadcast_bot_status
+        await broadcast_bot_status(
+            user_id=str(bot.user_id),
+            bot_id=bot_id,
+            status="running",
+            message="Bot started successfully"
+        )
+
         logger.info(f"Bot {bot_id} started successfully")
         return {"status": "running", "bot_id": bot_id}
 
@@ -339,6 +348,15 @@ async def _stop_bot_async(bot_id: str) -> dict:
         if bot:
             bot.status = "stopped"
             await db.commit()
+
+            # Broadcast bot status update via WebSocket
+            from api.core.ws_manager import broadcast_bot_status
+            await broadcast_bot_status(
+                user_id=str(bot.user_id),
+                bot_id=bot_id,
+                status="stopped",
+                message=f"Bot stopped, {orders_cancelled} orders cancelled"
+            )
 
     await engine.dispose()
 

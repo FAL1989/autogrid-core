@@ -174,6 +174,22 @@ CREATE TRIGGER update_exchange_credentials_updated_at
     BEFORE UPDATE ON exchange_credentials
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+-- Enable compression on hypertables (required before adding compression policy)
+ALTER TABLE trades SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'bot_id'
+);
+
+ALTER TABLE bot_metrics SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'bot_id'
+);
+
+ALTER TABLE ohlcv_cache SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'exchange, symbol, timeframe'
+);
+
 -- Compression policy for old data (compress after 7 days)
 SELECT add_compression_policy('trades', INTERVAL '7 days', if_not_exists => TRUE);
 SELECT add_compression_policy('bot_metrics', INTERVAL '7 days', if_not_exists => TRUE);

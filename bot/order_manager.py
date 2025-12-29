@@ -207,6 +207,8 @@ class OrderManager:
         self._orders: dict[UUID, ManagedOrder] = {}
         # Exchange ID to internal ID mapping
         self._exchange_id_map: dict[str, UUID] = {}
+        # Bot ID to user ID cache for WebSocket broadcasts
+        self._bot_user_cache: dict[UUID, UUID] = {}
 
     async def submit_order(self, order: ManagedOrder) -> ManagedOrder:
         """

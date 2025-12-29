@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     api_debug: bool = False
+    cors_origins: str = "http://localhost:3000"
 
     # Rate Limiting
     rate_limit_requests: int = 5  # requests per minute for auth endpoints

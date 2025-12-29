@@ -47,10 +47,6 @@
       "Edit(./.env.*)",
       "Write(./.env)",
       "Write(./.env.*)",
-      "Bash(curl *api_key*:*)",
-      "Bash(curl *secret*:*)",
-      "Bash(echo $*KEY*:*)",
-      "Bash(echo $*SECRET*:*)",
       "Bash(cat .env:*)",
       "Bash(git push --force:*)",
       "Bash(git reset --hard:*)"

@@ -347,11 +347,11 @@ make docker-up
 
 ### Sprint 3 - Frontend & UX
 
-#### 8. Integrar Frontend com API
-- [ ] Implementar autenticação no frontend
-- [ ] Criar hooks de data fetching (SWR/React Query)
-- [ ] Implementar WebSocket para updates real-time
-- [ ] Adicionar loading states e error handling
+#### 8. Integrar Frontend com API ✅
+- [x] ✅ Implementar autenticação no frontend (auth-context, middleware, API routes)
+- [x] ✅ Criar hooks de data fetching (TanStack Query: use-bots, use-orders, use-trades, use-credentials, use-dashboard)
+- [x] ✅ Implementar WebSocket para updates real-time (ws_manager, ws-context, use-realtime hooks)
+- [x] ✅ Adicionar loading states e error handling (skeleton, error-boundary, toast, spinner)
 
 #### 9. Implementar Dashboard Real
 - [ ] Conectar stats cards com API
