@@ -63,6 +63,31 @@ celery_app.conf.beat_schedule = {
         "task": "bot.tasks.cleanup_old_data",
         "schedule": crontab(hour=3, minute=0),  # Daily at 3 AM UTC
     },
+    # DCA Scheduling Tasks
+    "dca-hourly-buy": {
+        "task": "bot.tasks.dca_hourly_buy",
+        "schedule": crontab(minute=0),  # Every hour at :00
+    },
+    "dca-daily-buy": {
+        "task": "bot.tasks.dca_daily_buy",
+        "schedule": crontab(hour=9, minute=0),  # Daily at 9:00 UTC
+    },
+    "dca-weekly-buy": {
+        "task": "bot.tasks.dca_weekly_buy",
+        "schedule": crontab(day_of_week=0, hour=9, minute=0),  # Sunday 9:00 UTC
+    },
+    "dca-check-price-drops-every-5m": {
+        "task": "bot.tasks.dca_check_price_drops",
+        "schedule": 300.0,  # Every 5 minutes
+    },
+    "dca-check-take-profit-every-5m": {
+        "task": "bot.tasks.dca_check_take_profit",
+        "schedule": 300.0,  # Every 5 minutes
+    },
+    "dca-save-state-every-minute": {
+        "task": "bot.tasks.dca_save_strategy_state",
+        "schedule": 60.0,  # Every minute
+    },
 }
 
 # Registry of running bots (in-memory per worker)
@@ -767,6 +792,308 @@ async def _execute_dca_buy_async(bot_id: str) -> dict:
         "quantity": str(quantity),
         "price": str(current_price),
     }
+
+
+@celery_app.task(bind=True, max_retries=3)
+def dca_hourly_buy(self) -> dict:
+    """Execute hourly DCA buys for all active bots with hourly interval."""
+    return _run_async(_dca_interval_buy_async("hourly"))
+
+
+@celery_app.task(bind=True, max_retries=3)
+def dca_daily_buy(self) -> dict:
+    """Execute daily DCA buys for all active bots with daily interval."""
+    return _run_async(_dca_interval_buy_async("daily"))
+
+
+@celery_app.task(bind=True, max_retries=3)
+def dca_weekly_buy(self) -> dict:
+    """Execute weekly DCA buys for all active bots with weekly interval."""
+    return _run_async(_dca_interval_buy_async("weekly"))
+
+
+async def _dca_interval_buy_async(interval: str) -> dict:
+    """Execute DCA buys for all bots with the given interval."""
+    from bot.strategies.dca import DCAStrategy
+
+    executed = 0
+    skipped = 0
+    failed = 0
+
+    for bot_id, bot_data in list(_running_bots.items()):
+        # Skip non-DCA bots
+        if bot_data.get("strategy") != "dca":
+            continue
+
+        config = bot_data.get("config", {})
+
+        # Check if this bot uses the specified interval
+        if config.get("interval") != interval:
+            continue
+
+        # Check budget
+        amount_per_buy = Decimal(str(config.get("amount_per_buy", 100)))
+        investment = Decimal(str(config.get("investment", 1000)))
+
+        # Get strategy state to check remaining budget
+        strategy = bot_data.get("strategy_instance")
+        if isinstance(strategy, DCAStrategy):
+            if strategy.remaining_budget < amount_per_buy:
+                logger.info(f"DCA {bot_id}: Budget exhausted, skipping")
+                skipped += 1
+                continue
+
+        try:
+            execute_dca_buy.delay(bot_id)
+            executed += 1
+        except Exception as e:
+            logger.error(f"Failed to queue DCA buy for {bot_id}: {e}")
+            failed += 1
+
+    logger.info(f"DCA {interval} buy: executed={executed}, skipped={skipped}, failed={failed}")
+    return {"status": "ok", "interval": interval, "executed": executed, "skipped": skipped, "failed": failed}
+
+
+@celery_app.task(bind=True, max_retries=3)
+def dca_check_price_drops(self) -> dict:
+    """Check price drop conditions for all DCA bots with trigger_drop_percent."""
+    return _run_async(_dca_check_price_drops_async())
+
+
+async def _dca_check_price_drops_async() -> dict:
+    """Check and execute price-drop buys for DCA bots."""
+    from bot.strategies.dca import DCAStrategy
+
+    checked = 0
+    triggered = 0
+
+    for bot_id, bot_data in list(_running_bots.items()):
+        # Skip non-DCA bots
+        if bot_data.get("strategy") != "dca":
+            continue
+
+        config = bot_data.get("config", {})
+        connector = bot_data.get("connector")
+        symbol = bot_data.get("symbol")
+
+        # Check if this bot uses price drop trigger
+        trigger_drop = config.get("trigger_drop_percent")
+        if trigger_drop is None:
+            continue
+
+        # Check budget
+        amount_per_buy = Decimal(str(config.get("amount_per_buy", 100)))
+        strategy = bot_data.get("strategy_instance")
+
+        if isinstance(strategy, DCAStrategy):
+            if strategy.remaining_budget < amount_per_buy:
+                continue
+
+        checked += 1
+
+        try:
+            # Fetch current price
+            ticker = await connector.fetch_ticker(symbol)
+            current_price = Decimal(str(ticker["last"]))
+
+            # Update price tracking in strategy
+            if isinstance(strategy, DCAStrategy):
+                strategy._update_price_tracking(current_price)
+
+                # Check if drop triggered
+                if strategy._should_buy_by_drop(current_price):
+                    execute_dca_buy.delay(bot_id)
+                    triggered += 1
+                    logger.info(f"DCA {bot_id}: Price drop triggered buy at {current_price}")
+
+        except Exception as e:
+            logger.error(f"Price drop check failed for {bot_id}: {e}")
+
+    return {"status": "ok", "checked": checked, "triggered": triggered}
+
+
+@celery_app.task(bind=True, max_retries=3)
+def dca_check_take_profit(self) -> dict:
+    """Check take-profit conditions for all DCA bots."""
+    return _run_async(_dca_check_take_profit_async())
+
+
+async def _dca_check_take_profit_async() -> dict:
+    """Check and execute take-profit sells for DCA bots."""
+    from bot.strategies.dca import DCAStrategy
+
+    checked = 0
+    triggered = 0
+
+    for bot_id, bot_data in list(_running_bots.items()):
+        # Skip non-DCA bots
+        if bot_data.get("strategy") != "dca":
+            continue
+
+        config = bot_data.get("config", {})
+        connector = bot_data.get("connector")
+        symbol = bot_data.get("symbol")
+
+        # Check if this bot uses take profit
+        take_profit_percent = config.get("take_profit_percent")
+        if take_profit_percent is None:
+            continue
+
+        # Check if there's a position to sell
+        strategy = bot_data.get("strategy_instance")
+        if isinstance(strategy, DCAStrategy):
+            if strategy._total_quantity == 0:
+                continue
+
+        checked += 1
+
+        try:
+            # Fetch current price
+            ticker = await connector.fetch_ticker(symbol)
+            current_price = Decimal(str(ticker["last"]))
+
+            # Check if take profit triggered
+            if isinstance(strategy, DCAStrategy):
+                if strategy._should_take_profit(current_price):
+                    execute_dca_sell.delay(bot_id, str(current_price))
+                    triggered += 1
+                    logger.info(f"DCA {bot_id}: Take profit triggered at {current_price}")
+
+        except Exception as e:
+            logger.error(f"Take profit check failed for {bot_id}: {e}")
+
+    return {"status": "ok", "checked": checked, "triggered": triggered}
+
+
+@celery_app.task(bind=True, max_retries=5)
+def execute_dca_sell(self, bot_id: str, price: str) -> dict:
+    """
+    Execute take-profit sell for DCA bot.
+
+    Args:
+        bot_id: The bot ID to execute sell for
+        price: The trigger price (for logging)
+    """
+    logger.info(f"Executing DCA take-profit sell for bot {bot_id} at price {price}")
+
+    try:
+        result = _run_async(_execute_dca_sell_async(bot_id, Decimal(price)))
+        return result
+    except Exception as e:
+        logger.error(f"DCA sell failed for bot {bot_id}: {e}")
+        raise self.retry(exc=e, countdown=30)
+
+
+async def _execute_dca_sell_async(bot_id: str, price: Decimal) -> dict:
+    """Async implementation of DCA take-profit sell."""
+    from bot.order_manager import ManagedOrder
+    from bot.strategies.dca import DCAStrategy
+
+    bot_data = _running_bots.get(bot_id)
+    if not bot_data:
+        return {"status": "not_running", "bot_id": bot_id}
+
+    order_manager = bot_data.get("order_manager")
+    connector = bot_data.get("connector")
+    circuit_breaker = bot_data.get("circuit_breaker")
+    symbol = bot_data.get("symbol")
+    strategy = bot_data.get("strategy_instance")
+
+    if not all([order_manager, connector, symbol]):
+        return {"status": "error", "message": "Missing components"}
+
+    if not isinstance(strategy, DCAStrategy):
+        return {"status": "error", "message": "Not a DCA bot"}
+
+    # Get quantity to sell
+    quantity = strategy._total_quantity
+    if quantity == 0:
+        return {"status": "skipped", "message": "No position to sell"}
+
+    # Check circuit breaker
+    if circuit_breaker:
+        allowed, reason = await circuit_breaker.check_order_allowed(
+            bot_id=UUID(bot_id),
+            order_price=None,  # Market order
+            current_price=price,
+            investment=Decimal(str(bot_data.get("config", {}).get("investment", 1000))),
+        )
+        if not allowed:
+            logger.warning(f"DCA sell blocked by circuit breaker: {reason}")
+            return {"status": "blocked", "reason": reason}
+
+    # Create market sell order
+    order = ManagedOrder(
+        bot_id=UUID(bot_id),
+        symbol=symbol,
+        side="sell",
+        order_type="market",
+        quantity=quantity,
+    )
+
+    # Submit order
+    await order_manager.submit_order(order)
+    if circuit_breaker:
+        await circuit_breaker.record_order_placed(UUID(bot_id))
+
+    return {
+        "status": "executed",
+        "bot_id": bot_id,
+        "order_id": str(order.id),
+        "quantity": str(quantity),
+        "price": str(price),
+        "action": "take_profit_sell",
+    }
+
+
+@celery_app.task(bind=True)
+def dca_save_strategy_state(self) -> dict:
+    """Save DCA strategy state to database for all running bots."""
+    return _run_async(_dca_save_strategy_state_async())
+
+
+async def _dca_save_strategy_state_async() -> dict:
+    """Persist DCA strategy state for all running bots."""
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from api.core.config import get_settings
+    from api.services.bot_service import BotService
+    from bot.strategies.dca import DCAStrategy
+
+    saved = 0
+    errors = 0
+
+    settings = get_settings()
+    engine = create_async_engine(settings.async_database_url)
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with async_session() as db:
+        bot_service = BotService(db)
+
+        for bot_id, bot_data in list(_running_bots.items()):
+            strategy = bot_data.get("strategy_instance")
+            if not isinstance(strategy, DCAStrategy):
+                continue
+
+            try:
+                state = strategy.to_state_dict()
+                success = await bot_service.update_strategy_state(UUID(bot_id), state)
+                if success:
+                    saved += 1
+                else:
+                    logger.warning(f"Failed to save state for {bot_id}: bot not found")
+                    errors += 1
+            except Exception as e:
+                logger.error(f"Failed to save state for {bot_id}: {e}")
+                errors += 1
+
+        await db.commit()
+
+    await engine.dispose()
+
+    logger.debug(f"DCA state save: saved={saved}, errors={errors}")
+    return {"status": "ok", "saved": saved, "errors": errors}
 
 
 # =============================================================================

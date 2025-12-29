@@ -180,6 +180,12 @@ class Bot(Base):
         default=Decimal("0"),
         nullable=False,
     )
+    strategy_state: Mapped[dict] = mapped_column(
+        JSONB,
+        default=dict,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("NOW()"),

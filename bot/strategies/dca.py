@@ -41,7 +41,24 @@ class DCAStrategy(BaseStrategy):
             interval: Time interval for buys (None to disable)
             trigger_drop_percent: Price drop % to trigger extra buy (None to disable)
             take_profit_percent: Sell all when profit reaches this % (None to disable)
+
+        Raises:
+            ValueError: If parameters are invalid.
         """
+        # Validate parameters before calling super().__init__
+        if investment <= 0:
+            raise ValueError("investment must be positive")
+        if amount_per_buy <= 0:
+            raise ValueError("amount_per_buy must be positive")
+        if amount_per_buy > investment:
+            raise ValueError("amount_per_buy cannot exceed investment")
+        if trigger_drop_percent is not None and not (Decimal("0") < trigger_drop_percent <= Decimal("100")):
+            raise ValueError("trigger_drop_percent must be between 0 and 100")
+        if take_profit_percent is not None and take_profit_percent <= 0:
+            raise ValueError("take_profit_percent must be positive")
+        if interval is None and trigger_drop_percent is None:
+            raise ValueError("At least one trigger (interval or trigger_drop) required")
+
         super().__init__(symbol, investment)
 
         self.amount_per_buy = amount_per_buy
@@ -79,23 +96,24 @@ class DCAStrategy(BaseStrategy):
         """
         new_orders: list[Order] = []
 
-        # Check if we have budget left
-        if self.remaining_budget < self.amount_per_buy:
-            return new_orders
-
-        # Check for take profit
+        # Check for take profit FIRST (can sell even with no budget)
         if self._should_take_profit(current_price):
             return self._create_sell_all_order(current_price)
+
+        # Check if we have budget left (only needed for buying)
+        if self.remaining_budget < self.amount_per_buy:
+            return new_orders
 
         # Check time-based trigger
         if self._should_buy_by_time():
             order = self._create_buy_order(current_price)
             new_orders.append(order)
 
-        # Check price-drop trigger
-        elif self._should_buy_by_drop(current_price):
-            order = self._create_buy_order(current_price)
-            new_orders.append(order)
+        # Check price-drop trigger (independent, but avoid duplicate buy)
+        if self._should_buy_by_drop(current_price):
+            if not any(o.side == "buy" for o in new_orders):
+                order = self._create_buy_order(current_price)
+                new_orders.append(order)
 
         # Update price tracking
         self._update_price_tracking(current_price)
@@ -171,27 +189,39 @@ class DCAStrategy(BaseStrategy):
             self._highest_price = current_price
         self._last_price = current_price
 
-    def on_order_filled(self, order: Order, fill_price: Decimal) -> None:
-        """Handle filled order."""
+    def on_order_filled(self, order: Order, fill_price: Decimal) -> Decimal:
+        """
+        Handle filled order.
+
+        Args:
+            order: The filled order.
+            fill_price: The actual fill price.
+
+        Returns:
+            Realized P&L from this fill (0 for buys, profit/loss for sells).
+        """
         self._filled_orders.append(order)
+        realized_pnl = Decimal("0")
 
         if order.side == "buy":
             self._total_spent += fill_price * order.quantity
             self._total_quantity += order.quantity
             self._last_buy_time = datetime.utcnow()
-            # Reset highest price after buy
-            self._highest_price = fill_price
+            # Note: Don't reset _highest_price here to allow drop detection to work properly
 
         else:  # sell
             # Calculate realized P&L
             cost_basis = self.average_entry_price * order.quantity
             proceeds = fill_price * order.quantity
-            self.realized_pnl += proceeds - cost_basis
+            realized_pnl = proceeds - cost_basis
+            self.realized_pnl += realized_pnl
 
             # Reset position
             self._total_quantity = Decimal("0")
             self._total_spent = Decimal("0")
             self._highest_price = None
+
+        return realized_pnl
 
     def should_stop(self) -> bool:
         """
@@ -219,3 +249,67 @@ class DCAStrategy(BaseStrategy):
             "total_spent": float(self._total_spent),
         })
         return base_stats
+
+    def to_state_dict(self) -> dict:
+        """
+        Export strategy state for persistence.
+
+        Returns:
+            Dictionary with serializable state values.
+        """
+        return {
+            "last_buy_time": self._last_buy_time.isoformat() if self._last_buy_time else None,
+            "last_price": str(self._last_price) if self._last_price else None,
+            "highest_price": str(self._highest_price) if self._highest_price else None,
+            "total_spent": str(self._total_spent),
+            "total_quantity": str(self._total_quantity),
+            "realized_pnl": str(self.realized_pnl),
+        }
+
+    @classmethod
+    def from_state_dict(
+        cls,
+        state: dict,
+        symbol: str,
+        investment: Decimal,
+        amount_per_buy: Decimal,
+        interval: Literal["hourly", "daily", "weekly"] | None = None,
+        trigger_drop_percent: Decimal | None = None,
+        take_profit_percent: Decimal | None = None,
+    ) -> "DCAStrategy":
+        """
+        Restore strategy from persisted state.
+
+        Args:
+            state: Previously persisted state dict.
+            symbol: Trading pair.
+            investment: Total budget.
+            amount_per_buy: Amount per buy.
+            interval: Time interval for buys.
+            trigger_drop_percent: Price drop trigger %.
+            take_profit_percent: Take profit %.
+
+        Returns:
+            DCAStrategy instance with restored state.
+        """
+        strategy = cls(
+            symbol=symbol,
+            investment=investment,
+            amount_per_buy=amount_per_buy,
+            interval=interval,
+            trigger_drop_percent=trigger_drop_percent,
+            take_profit_percent=take_profit_percent,
+        )
+
+        # Restore state
+        if state.get("last_buy_time"):
+            strategy._last_buy_time = datetime.fromisoformat(state["last_buy_time"])
+        if state.get("last_price"):
+            strategy._last_price = Decimal(state["last_price"])
+        if state.get("highest_price"):
+            strategy._highest_price = Decimal(state["highest_price"])
+        strategy._total_spent = Decimal(state.get("total_spent", "0"))
+        strategy._total_quantity = Decimal(state.get("total_quantity", "0"))
+        strategy.realized_pnl = Decimal(state.get("realized_pnl", "0"))
+
+        return strategy

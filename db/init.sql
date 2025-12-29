@@ -43,10 +43,11 @@ CREATE TABLE IF NOT EXISTS bots (
     exchange VARCHAR(50) NOT NULL,
     symbol VARCHAR(20) NOT NULL,
     config JSONB NOT NULL,
-    status VARCHAR(20) DEFAULT 'stopped' CHECK (status IN ('stopped', 'running', 'paused', 'error')),
+    status VARCHAR(20) DEFAULT 'stopped' CHECK (status IN ('stopped', 'running', 'paused', 'error', 'starting', 'stopping')),
     error_message TEXT,
     realized_pnl DECIMAL(20, 8) DEFAULT 0 NOT NULL,
     unrealized_pnl DECIMAL(20, 8) DEFAULT 0 NOT NULL,
+    strategy_state JSONB DEFAULT '{}',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -189,3 +190,6 @@ SELECT add_compression_policy('ohlcv_cache', INTERVAL '7 days', if_not_exists =>
 -- Add P&L columns to bots table (for existing databases)
 ALTER TABLE bots ADD COLUMN IF NOT EXISTS realized_pnl DECIMAL(20, 8) DEFAULT 0 NOT NULL;
 ALTER TABLE bots ADD COLUMN IF NOT EXISTS unrealized_pnl DECIMAL(20, 8) DEFAULT 0 NOT NULL;
+
+-- Add strategy_state column for DCA state persistence
+ALTER TABLE bots ADD COLUMN IF NOT EXISTS strategy_state JSONB DEFAULT '{}';

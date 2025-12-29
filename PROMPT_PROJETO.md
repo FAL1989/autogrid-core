@@ -80,7 +80,7 @@ AutoGrid/
 │       ├── security.py               # Hash de senhas (bcrypt)
 │       ├── jwt.py                    # Criação/validação JWT
 │       ├── user_service.py           # CRUD de usuários
-│       ├── bot_service.py            # ✅ CRUD de bots
+│       ├── bot_service.py            # ✅ CRUD de bots + strategy_state persistence
 │       ├── order_service.py          # ✅ NOVO - CRUD de ordens e trades
 │       ├── encryption.py             # ✅ NOVO - Criptografia Fernet
 │       └── credential_service.py     # ✅ NOVO - Gerenciamento de credenciais
@@ -90,12 +90,12 @@ AutoGrid/
 │   ├── engine.py                     # BotEngine com loop de execução + OrderManager/CircuitBreaker
 │   ├── order_manager.py              # ✅ NOVO - Order state machine + lifecycle
 │   ├── circuit_breaker.py            # ✅ NOVO - Kill switch (50 orders/min, 5% loss/hour)
-│   ├── tasks.py                      # ✅ NOVO - Celery tasks (start/stop bots)
+│   ├── tasks.py                      # ✅ Celery tasks (start/stop, DCA scheduler, metrics)
 │   ├── Dockerfile
 │   ├── strategies/
 │   │   ├── base.py                   # BaseStrategy ABC + Order dataclass
-│   │   ├── grid.py                   # GridStrategy completo
-│   │   └── dca.py                    # DCAStrategy completo
+│   │   ├── grid.py                   # GridStrategy completo (bidirecional, P&L)
+│   │   └── dca.py                    # ✅ DCAStrategy completo (scheduler, state)
 │   └── exchange/
 │       ├── connector.py              # ExchangeConnector ABC + CCXTConnector + retry
 │       └── websocket_manager.py      # ✅ NOVO - WebSocket para Binance/Bybit
@@ -137,7 +137,7 @@ AutoGrid/
 │   ├── .eslintrc.json
 │   └── Dockerfile
 │
-├── tests/                            # Testes Automatizados (203 testes)
+├── tests/                            # Testes Automatizados (208 testes)
 │   ├── conftest.py                   # Fixtures pytest (mock exchange, orders, auth, bots)
 │   ├── pytest.ini                    # Configuração pytest-asyncio
 │   ├── unit/
@@ -147,7 +147,8 @@ AutoGrid/
 │   │   ├── test_credentials.py       # ✅ Testes de credenciais
 │   │   ├── test_order_manager.py     # ✅ Testes OrderManager (47 testes)
 │   │   ├── test_circuit_breaker.py   # ✅ Testes CircuitBreaker (38 testes)
-│   │   └── test_grid_strategy_complete.py  # ✅ NOVO - Testes Grid completo (26 testes)
+│   │   ├── test_grid_strategy_complete.py  # ✅ Testes Grid completo (26 testes)
+│   │   └── test_dca_strategy_complete.py   # ✅ NOVO - Testes DCA completo (53 testes)
 │   └── integration/
 │       └── test_api.py               # Testes de API (32 testes) + Orders endpoints
 │
@@ -200,7 +201,7 @@ AutoGrid/
 - [x] Order dataclass com status tracking + grid_level
 - [x] GridStrategy com cálculo de grid levels
 - [x] ✅ **GridStrategy completo** (buy+sell bidirecional, GridLevel, position tracking)
-- [x] DCAStrategy com triggers de tempo e preço
+- [x] ✅ **DCAStrategy completo** (scheduler, price drop, take profit, state persistence)
 - [x] ExchangeConnector ABC
 - [x] CCXTConnector implementado
 - [x] BotEngine com loop assíncrono
@@ -209,6 +210,7 @@ AutoGrid/
 - [x] ✅ **WebSocketManager** para Binance e Bybit
 - [x] ✅ **Retry com exponential backoff** no connector
 - [x] ✅ **Celery tasks** para start/stop de bots + sync_bot_metrics (30s)
+- [x] ✅ **Celery Beat DCA** (hourly/daily/weekly, price drops, take profit, state save)
 - [x] ✅ **P&L Pipeline** (strategy → engine → circuit_breaker → database)
 
 ### Frontend (Next.js)
@@ -240,7 +242,7 @@ AutoGrid/
 |--------|-----------|------------|
 | users | Usuários com planos (free/starter/pro/enterprise) | Não |
 | exchange_credentials | Credenciais criptografadas | Não |
-| bots | Configuração dos bots | Não |
+| bots | Configuração dos bots + strategy_state (JSONB) | Não |
 | orders | Ordens de compra/venda | Não |
 | trades | Histórico de trades | Sim |
 | bot_metrics | Métricas de performance | Sim |
@@ -335,11 +337,13 @@ make docker-up
 - [x] ✅ P&L no BotResponse da API
 - [x] ✅ 26 testes unitários do grid completo
 
-#### 7. Implementar DCA Completo
-- [ ] Scheduler para compras periódicas
-- [ ] Detector de price drop
-- [ ] Take profit automático
-- [ ] Tracking de average entry
+#### 7. Implementar DCA Completo ✅
+- [x] ✅ Scheduler para compras periódicas (Celery Beat: hourly/daily/weekly)
+- [x] ✅ Detector de price drop (task a cada 5 min)
+- [x] ✅ Take profit automático (task a cada 5 min + execute_dca_sell)
+- [x] ✅ Tracking de average entry (to_state_dict/from_state_dict + persistência)
+- [x] ✅ Validação de parâmetros no DCAStrategy.__init__
+- [x] ✅ 53 testes unitários cobrindo todos os cenários
 
 ### Sprint 3 - Frontend & UX
 
@@ -503,5 +507,5 @@ TELEGRAM_CHAT_ID=
 ---
 
 *Prompt gerado em: Dezembro 2025*
-*Última atualização: 28/12/2025 - Sprint 2 Item 6 completo (Grid Trading bidirecional, P&L pipeline, sync_bot_metrics)*
-*Versão: 1.5.0*
+*Última atualização: 28/12/2025 - Sprint 2 Item 7 completo (DCA Scheduler, price drop, take profit, state persistence)*
+*Versão: 1.6.0*

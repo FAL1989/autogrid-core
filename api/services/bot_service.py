@@ -231,3 +231,44 @@ class BotService:
         await self.db.delete(bot)
         await self.db.flush()
         return True
+
+    async def update_strategy_state(
+        self,
+        bot_id: UUID,
+        state: dict,
+    ) -> bool:
+        """
+        Update bot's strategy state.
+
+        Used for persisting DCA strategy state between restarts.
+
+        Args:
+            bot_id: The bot's UUID.
+            state: Strategy state dictionary.
+
+        Returns:
+            True if updated, False if bot not found.
+        """
+        stmt = (
+            update(Bot)
+            .where(Bot.id == bot_id)
+            .values(strategy_state=state)
+        )
+        result = await self.db.execute(stmt)
+        await self.db.flush()
+        return result.rowcount > 0
+
+    async def get_strategy_state(self, bot_id: UUID) -> dict | None:
+        """
+        Get bot's strategy state.
+
+        Args:
+            bot_id: The bot's UUID.
+
+        Returns:
+            Strategy state dict if bot found, None otherwise.
+        """
+        result = await self.db.execute(
+            select(Bot.strategy_state).where(Bot.id == bot_id)
+        )
+        return result.scalar_one_or_none()

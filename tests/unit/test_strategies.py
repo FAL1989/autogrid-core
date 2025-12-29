@@ -163,10 +163,13 @@ class TestDCAStrategy:
         """Test that strategy stops when budget is exhausted."""
         strategy = DCAStrategy(
             symbol=dca_config["symbol"],
-            investment=Decimal("50"),  # Small budget
-            amount_per_buy=Decimal("100"),  # More than budget
+            investment=Decimal("100"),
+            amount_per_buy=Decimal("100"),
             interval=dca_config["interval"],
         )
+        # Simulate budget exhaustion (spent all investment)
+        strategy._total_spent = Decimal("100")
+        strategy._total_quantity = Decimal("0")  # Position sold
 
         # Should stop since budget < amount_per_buy and no position
         assert strategy.should_stop() is True
