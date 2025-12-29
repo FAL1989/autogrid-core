@@ -7,12 +7,14 @@ Manages strategy execution, order placement, and position tracking.
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Protocol
+from typing import Callable, Protocol
 from uuid import UUID
 
+from bot.circuit_breaker import CircuitBreaker
 from bot.exchange.connector import ExchangeConnector
+from bot.order_manager import ManagedOrder, OrderManager, OrderState
 from bot.strategies.base import BaseStrategy, Order
 
 logger = logging.getLogger(__name__)
@@ -42,49 +44,90 @@ class RiskManager(Protocol):
         ...
 
 
+@dataclass
+class BotState:
+    """Current bot state."""
+
+    is_running: bool = False
+    current_price: Decimal = Decimal("0")
+    position: dict[str, Decimal] = field(default_factory=dict)
+    total_orders: int = 0
+    filled_orders: int = 0
+    realized_pnl: Decimal = Decimal("0")
+
+
 class BotEngine:
     """
     Trading Bot Engine.
 
-    Orchestrates strategy execution with risk management and order handling.
+    Orchestrates strategy execution with risk management, order handling,
+    circuit breaker protection, and real-time updates.
     """
 
     def __init__(
         self,
         config: BotConfig,
+        order_manager: OrderManager | None = None,
+        circuit_breaker: CircuitBreaker | None = None,
         risk_manager: RiskManager | None = None,
+        on_order_filled: Callable[[ManagedOrder], None] | None = None,
+        tick_interval: float = 1.0,
     ) -> None:
+        """
+        Initialize bot engine.
+
+        Args:
+            config: Bot configuration
+            order_manager: Order lifecycle manager
+            circuit_breaker: Safety circuit breaker
+            risk_manager: Risk management handler
+            on_order_filled: Callback when order fills
+            tick_interval: Seconds between trading ticks
+        """
         self.config = config
         self.strategy = config.strategy
         self.exchange = config.exchange
+        self.order_manager = order_manager
+        self.circuit_breaker = circuit_breaker
         self.risk_manager = risk_manager
-        self._running = False
-        self._orders: list[Order] = []
+        self.on_order_filled = on_order_filled
+        self.tick_interval = tick_interval
+
+        # State
+        self._state = BotState()
+        self._orders: list[Order] = []  # Legacy order tracking
+        self._position: dict[str, Decimal] = {}  # symbol -> quantity
 
     @property
     def is_running(self) -> bool:
         """Check if bot is running."""
-        return self._running
+        return self._state.is_running
+
+    @property
+    def state(self) -> BotState:
+        """Get current bot state."""
+        return self._state
 
     async def start(self) -> None:
         """
         Start the bot engine.
 
         - Connects to exchange
+        - Checks circuit breaker
         - Initializes strategy
         - Starts main trading loop
         """
         logger.info(f"Starting bot {self.config.id} for {self.config.symbol}")
-        self._running = True
+        self._state.is_running = True
 
         try:
             # Connect to exchange
             await self.exchange.connect()
 
             # Main loop
-            while self._running:
+            while self._state.is_running:
                 await self._tick()
-                await asyncio.sleep(1)  # 1 second interval
+                await asyncio.sleep(self.tick_interval)
 
         except Exception as e:
             logger.error(f"Bot {self.config.id} error: {e}")
@@ -100,12 +143,17 @@ class BotEngine:
         - Disconnects from exchange
         """
         logger.info(f"Stopping bot {self.config.id}")
-        self._running = False
+        self._state.is_running = False
 
-        # Cancel open orders
-        for order in self._orders:
-            if order.status == "open":
-                await self.exchange.cancel_order(order.id, self.config.symbol)
+        # Cancel open orders via OrderManager if available
+        if self.order_manager:
+            cancelled = await self.order_manager.cancel_all_orders(self.config.id)
+            logger.info(f"Cancelled {cancelled} orders")
+        else:
+            # Legacy order cancellation
+            for order in self._orders:
+                if order.status == "open" and order.exchange_id:
+                    await self.exchange.cancel_order(order.exchange_id, self.config.symbol)
 
         await self.exchange.disconnect()
 
@@ -113,24 +161,83 @@ class BotEngine:
         """
         Single tick of the trading loop.
 
-        1. Fetch current market data
-        2. Let strategy calculate orders
-        3. Execute orders with risk checks
+        1. Check circuit breaker
+        2. Fetch current market data
+        3. Let strategy calculate orders
+        4. Execute orders with risk checks
         """
+        # Check circuit breaker first
+        if self.circuit_breaker:
+            is_tripped = await self.circuit_breaker.is_tripped(self.config.id)
+            if is_tripped:
+                await self._handle_circuit_trip()
+                return
+
         # Get current price
         ticker = await self.exchange.fetch_ticker(self.config.symbol)
         current_price = Decimal(str(ticker["last"]))
+        self._state.current_price = current_price
+
+        # Get open orders
+        open_orders = await self._get_open_orders()
 
         # Let strategy decide on orders
         new_orders = self.strategy.calculate_orders(
             current_price=current_price,
-            open_orders=self._orders,
+            open_orders=open_orders,
         )
 
-        # Execute orders with risk management
+        # Execute orders with risk management and circuit breaker
         for order in new_orders:
-            if self._check_order(order, current_price):
-                await self._execute_order(order)
+            await self._execute_order_with_checks(order, current_price)
+
+    async def _get_open_orders(self) -> list[Order]:
+        """Get currently open orders."""
+        if self.order_manager:
+            # Convert ManagedOrders to strategy Orders
+            managed_orders = await self.order_manager.get_open_orders(self.config.id)
+            return [
+                Order(
+                    id=mo.id,
+                    side=mo.side,
+                    type=mo.order_type,
+                    price=mo.price,
+                    quantity=mo.quantity,
+                    status="open" if mo.is_active else mo.state.value,
+                    exchange_id=mo.exchange_id,
+                )
+                for mo in managed_orders
+            ]
+        return [o for o in self._orders if o.status == "open"]
+
+    async def _execute_order_with_checks(
+        self,
+        order: Order,
+        current_price: Decimal,
+    ) -> None:
+        """Execute order with circuit breaker and risk checks."""
+        # Check circuit breaker
+        if self.circuit_breaker:
+            allowed, reason = await self.circuit_breaker.check_order_allowed(
+                bot_id=self.config.id,
+                order_price=order.price,
+                current_price=current_price,
+                investment=self.config.investment,
+            )
+            if not allowed:
+                logger.warning(f"Order blocked by circuit breaker: {reason}")
+                return
+
+        # Check risk manager
+        if not self._check_order(order, current_price):
+            return
+
+        # Execute order
+        await self._execute_order(order)
+
+        # Record order placement in circuit breaker
+        if self.circuit_breaker:
+            await self.circuit_breaker.record_order_placed(self.config.id)
 
     def _check_order(self, order: Order, current_price: Decimal) -> bool:
         """Validate order against risk rules."""
@@ -146,22 +253,121 @@ class BotEngine:
 
     async def _execute_order(self, order: Order) -> None:
         """Execute order on exchange."""
-        try:
-            result = await self.exchange.create_order(
+        if self.order_manager:
+            # Use OrderManager for full lifecycle management
+            managed_order = ManagedOrder(
+                id=order.id,
+                bot_id=self.config.id,
                 symbol=self.config.symbol,
-                order_type=order.type,
                 side=order.side,
-                amount=float(order.quantity),
-                price=float(order.price) if order.price else None,
+                order_type=order.type,
+                quantity=order.quantity,
+                price=order.price,
             )
-            order.exchange_id = result.get("id")
-            order.status = "open"
-            self._orders.append(order)
-            logger.info(f"Order placed: {order}")
 
-        except Exception as e:
-            logger.error(f"Failed to place order: {e}")
-            order.status = "error"
+            try:
+                await self.order_manager.submit_order(managed_order)
+                self._state.total_orders += 1
+                logger.info(f"Order submitted via OrderManager: {managed_order}")
+            except Exception as e:
+                logger.error(f"Failed to submit order: {e}")
+                order.status = "error"
+        else:
+            # Legacy direct execution
+            try:
+                result = await self.exchange.create_order(
+                    symbol=self.config.symbol,
+                    order_type=order.type,
+                    side=order.side,
+                    amount=float(order.quantity),
+                    price=float(order.price) if order.price else None,
+                )
+                order.exchange_id = result.get("id")
+                order.status = "open"
+                self._orders.append(order)
+                self._state.total_orders += 1
+                logger.info(f"Order placed: {order}")
+
+            except Exception as e:
+                logger.error(f"Failed to place order: {e}")
+                order.status = "error"
+
+    async def handle_order_filled(self, order: ManagedOrder) -> None:
+        """
+        Handle order fill event from WebSocket or polling.
+
+        Updates position, calculates P&L, and notifies strategy.
+
+        Args:
+            order: The filled order
+        """
+        self._state.filled_orders += 1
+
+        # Update position
+        symbol_base = self.config.symbol.split("/")[0]
+        current_position = self._position.get(symbol_base, Decimal("0"))
+
+        if order.side == "buy":
+            self._position[symbol_base] = current_position + order.filled_quantity
+        else:
+            self._position[symbol_base] = current_position - order.filled_quantity
+
+        # Calculate realized P&L if this closes a position
+        if order.average_fill_price:
+            # Notify strategy
+            strategy_order = Order(
+                id=order.id,
+                side=order.side,
+                type=order.order_type,
+                price=order.price,
+                quantity=order.quantity,
+                status="filled",
+                exchange_id=order.exchange_id,
+            )
+            self.strategy.on_order_filled(strategy_order, order.average_fill_price)
+
+            # Update realized P&L from strategy
+            self._state.realized_pnl = self.strategy.realized_pnl
+
+        # Record P&L in circuit breaker
+        if self.circuit_breaker:
+            # If we have a loss, record it
+            # (simplified - real P&L calculation would be more complex)
+            pass
+
+        # Callback
+        if self.on_order_filled:
+            self.on_order_filled(order)
+
+        logger.info(
+            f"Order filled: {order.id} - "
+            f"Position: {self._position.get(symbol_base, 0)} {symbol_base}"
+        )
+
+    async def _handle_circuit_trip(self) -> None:
+        """Handle circuit breaker trip."""
+        logger.warning(f"Circuit breaker tripped for bot {self.config.id}")
+
+        # Cancel all orders
+        if self.order_manager:
+            await self.order_manager.cancel_all_orders(self.config.id)
+
+        # Stop the bot
+        self._state.is_running = False
+
+    def get_stats(self) -> dict:
+        """Get bot statistics."""
+        return {
+            "bot_id": str(self.config.id),
+            "symbol": self.config.symbol,
+            "is_running": self._state.is_running,
+            "current_price": float(self._state.current_price),
+            "position": {k: float(v) for k, v in self._position.items()},
+            "total_orders": self._state.total_orders,
+            "filled_orders": self._state.filled_orders,
+            "realized_pnl": float(self._state.realized_pnl),
+            "strategy_stats": self.strategy.get_stats(),
+        }
 
 
 async def main() -> None:

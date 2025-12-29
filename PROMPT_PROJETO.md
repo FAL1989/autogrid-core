@@ -68,7 +68,8 @@ AutoGrid/
 │   │   └── rate_limiter.py           # Rate limiting com Redis
 │   ├── routes/
 │   │   ├── auth.py                   # Registro, login, refresh, /me
-│   │   ├── bots.py                   # CRUD de bots + start/stop
+│   │   ├── bots.py                   # CRUD de bots + start/stop (Celery dispatch)
+│   │   ├── orders.py                 # ✅ NOVO - Ordens e trades por bot
 │   │   ├── backtest.py               # Executar backtests
 │   │   └── credentials.py            # ✅ NOVO - CRUD de credenciais + validação
 │   ├── models/
@@ -80,19 +81,24 @@ AutoGrid/
 │       ├── jwt.py                    # Criação/validação JWT
 │       ├── user_service.py           # CRUD de usuários
 │       ├── bot_service.py            # ✅ CRUD de bots
+│       ├── order_service.py          # ✅ NOVO - CRUD de ordens e trades
 │       ├── encryption.py             # ✅ NOVO - Criptografia Fernet
 │       └── credential_service.py     # ✅ NOVO - Gerenciamento de credenciais
 │
 ├── bot/                              # Engine de Trading
 │   ├── __init__.py
-│   ├── engine.py                     # BotEngine com loop de execução
+│   ├── engine.py                     # BotEngine com loop de execução + OrderManager/CircuitBreaker
+│   ├── order_manager.py              # ✅ NOVO - Order state machine + lifecycle
+│   ├── circuit_breaker.py            # ✅ NOVO - Kill switch (50 orders/min, 5% loss/hour)
+│   ├── tasks.py                      # ✅ NOVO - Celery tasks (start/stop bots)
 │   ├── Dockerfile
 │   ├── strategies/
 │   │   ├── base.py                   # BaseStrategy ABC + Order dataclass
 │   │   ├── grid.py                   # GridStrategy completo
 │   │   └── dca.py                    # DCAStrategy completo
 │   └── exchange/
-│       └── connector.py              # ExchangeConnector ABC + CCXTConnector
+│       ├── connector.py              # ExchangeConnector ABC + CCXTConnector + retry
+│       └── websocket_manager.py      # ✅ NOVO - WebSocket para Binance/Bybit
 │
 ├── telegram/                         # Bot Telegram
 │   ├── __init__.py
@@ -131,15 +137,17 @@ AutoGrid/
 │   ├── .eslintrc.json
 │   └── Dockerfile
 │
-├── tests/                            # Testes Automatizados (58 testes)
+├── tests/                            # Testes Automatizados (177 testes)
 │   ├── conftest.py                   # Fixtures pytest (mock exchange, orders, auth, bots)
 │   ├── pytest.ini                    # Configuração pytest-asyncio
 │   ├── unit/
 │   │   ├── test_strategies.py        # Testes Grid e DCA
 │   │   ├── test_auth.py              # ✅ Testes de autenticação (17 testes)
-│   │   └── test_bots.py              # ✅ NOVO - Testes de CRUD bots (21 testes)
+│   │   ├── test_bots.py              # ✅ Testes de CRUD bots (21 testes)
+│   │   ├── test_order_manager.py     # ✅ NOVO - Testes OrderManager (47 testes)
+│   │   └── test_circuit_breaker.py   # ✅ NOVO - Testes CircuitBreaker (38 testes)
 │   └── integration/
-│       └── test_api.py               # Testes de API (20 testes)
+│       └── test_api.py               # Testes de API (32 testes) + Orders endpoints
 │
 ├── db/
 │   └── init.sql                      # Schema completo TimescaleDB
@@ -181,6 +189,9 @@ AutoGrid/
 - [x] ✅ **Start/Stop de bots** com validação de estado (stopped/running/paused/error)
 - [x] Endpoint de backtest - protegido com auth
 - [x] Schemas Pydantic completos
+- [x] ✅ **Endpoints de ordens** (list, open, cancel por bot)
+- [x] ✅ **Endpoints de trades** (list, statistics por bot)
+- [x] ✅ **OrderService** para CRUD de ordens e trades
 
 ### Bot Engine
 - [x] BaseStrategy ABC com métodos abstratos
@@ -190,6 +201,11 @@ AutoGrid/
 - [x] ExchangeConnector ABC
 - [x] CCXTConnector implementado
 - [x] BotEngine com loop assíncrono
+- [x] ✅ **OrderManager** com state machine (PENDING → OPEN → FILLED/CANCELLED)
+- [x] ✅ **CircuitBreaker** (50 orders/min, 5% loss/hour, 10% price deviation)
+- [x] ✅ **WebSocketManager** para Binance e Bybit
+- [x] ✅ **Retry com exponential backoff** no connector
+- [x] ✅ **Celery tasks** para start/stop de bots
 
 ### Frontend (Next.js)
 - [x] Landing page
@@ -295,11 +311,15 @@ make docker-up
 
 ### Sprint 2 - Core Trading
 
-#### 5. Implementar Execução de Ordens
-- [ ] Criar order manager
-- [ ] Implementar order state machine
-- [ ] Adicionar retry com exponential backoff
-- [ ] Implementar circuit breaker
+#### 5. Implementar Execução de Ordens ✅
+- [x] ✅ Criar order manager (`bot/order_manager.py`)
+- [x] ✅ Implementar order state machine (9 estados com transições validadas)
+- [x] ✅ Adicionar retry com exponential backoff
+- [x] ✅ Implementar circuit breaker (`bot/circuit_breaker.py`)
+- [x] ✅ WebSocket para updates em real-time (Binance/Bybit)
+- [x] ✅ Celery tasks para start/stop de bots
+- [x] ✅ API endpoints para ordens e trades
+- [x] ✅ 85 testes unitários e integração
 
 #### 6. Implementar Grid Trading Completo
 - [ ] Colocar ordens iniciais
@@ -384,17 +404,25 @@ make docker-up
         ▼          ▼          ▼          ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      BOT ENGINE (Celery)                         │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐               │
-│  │GridStrategy │ │ DCAStrategy │ │OrderManager │               │
-│  └──────┬──────┘ └──────┬──────┘ └──────┬──────┘               │
-└─────────┼───────────────┼───────────────┼──────────────────────┘
-          │               │               │
-          ▼               ▼               ▼
+│  ┌─────────────┐ ┌─────────────┐ ┌──────────────┐              │
+│  │GridStrategy │ │ DCAStrategy │ │ OrderManager │              │
+│  └──────┬──────┘ └──────┬──────┘ └──────┬───────┘              │
+│         │               │               │                       │
+│         └───────────────┴───────┬───────┘                       │
+│                                 ▼                               │
+│                        ┌────────────────┐                       │
+│                        │CircuitBreaker  │ ◄── Kill Switch       │
+│                        │ (50 ord/min)   │     (Safety Limits)   │
+│                        └────────┬───────┘                       │
+└─────────────────────────────────┼───────────────────────────────┘
+                                  │
+                                  ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    EXCHANGE CONNECTOR (CCXT)                     │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐                           │
-│  │ Binance │ │  MEXC   │ │  Bybit  │                           │
-│  └─────────┘ └─────────┘ └─────────┘                           │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐  ┌────────────────────┐  │
+│  │ Binance │ │  MEXC   │ │  Bybit  │  │ WebSocket Manager  │  │
+│  └─────────┘ └─────────┘ └─────────┘  │ (Order Updates)    │  │
+│                                        └────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
           │               │               │
           ▼               ▼               ▼
@@ -467,5 +495,5 @@ TELEGRAM_CHAT_ID=
 ---
 
 *Prompt gerado em: Dezembro 2025*
-*Última atualização: 28/12/2025 - Conexão com Exchange implementada (validação, criptografia, permissões)*
-*Versão: 1.3.0*
+*Última atualização: 28/12/2025 - Sprint 2 Item 5 completo (OrderManager, CircuitBreaker, WebSocket, Celery tasks)*
+*Versão: 1.4.0*

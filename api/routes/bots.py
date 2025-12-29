@@ -247,7 +247,11 @@ async def start_bot(
 ) -> BotActionResponse:
     """
     Start a stopped/paused bot.
+
+    Dispatches a Celery task to start the bot engine asynchronously.
     """
+    from bot.tasks import start_trading_bot
+
     bot_service = BotService(db)
 
     bot = await bot_service.get_by_id_for_user(bot_id, current_user.id)
@@ -263,23 +267,29 @@ async def start_bot(
             detail="Bot is already running",
         )
 
+    if bot.status == "starting":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Bot is already starting",
+        )
+
     if bot.status == "error":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Bot is in error state: {bot.error_message}",
         )
 
-    # Update status
-    await bot_service.update_status(bot_id, "running")
+    # Update status to starting
+    await bot_service.update_status(bot_id, "starting")
+    await db.commit()
 
-    # TODO: Trigger actual bot engine via Celery task
-    # from bot.tasks import start_trading_bot
-    # start_trading_bot.delay(str(bot_id))
+    # Dispatch Celery task to start the bot
+    task = start_trading_bot.delay(str(bot_id))
 
     return BotActionResponse(
         bot_id=bot_id,
-        status="running",
-        message="Bot started successfully",
+        status="starting",
+        message=f"Bot start initiated (task_id: {task.id})",
     )
 
 
@@ -291,7 +301,11 @@ async def stop_bot(
 ) -> BotActionResponse:
     """
     Stop a running bot and cancel all open orders.
+
+    Dispatches a Celery task to gracefully stop the bot.
     """
+    from bot.tasks import stop_trading_bot
+
     bot_service = BotService(db)
 
     bot = await bot_service.get_by_id_for_user(bot_id, current_user.id)
@@ -307,17 +321,23 @@ async def stop_bot(
             detail="Bot is already stopped",
         )
 
-    # Update status
-    await bot_service.update_status(bot_id, "stopped")
+    if bot.status == "stopping":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Bot is already stopping",
+        )
 
-    # TODO: Trigger bot shutdown via Celery/Redis
-    # from bot.tasks import stop_trading_bot
-    # stop_trading_bot.delay(str(bot_id))
+    # Update status to stopping
+    await bot_service.update_status(bot_id, "stopping")
+    await db.commit()
+
+    # Dispatch Celery task to stop the bot
+    task = stop_trading_bot.delay(str(bot_id))
 
     return BotActionResponse(
         bot_id=bot_id,
-        status="stopped",
-        message="Bot stopped successfully",
+        status="stopping",
+        message=f"Bot stop initiated (task_id: {task.id})",
     )
 
 

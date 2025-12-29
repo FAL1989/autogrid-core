@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/0"
 
+    # Circuit Breaker
+    circuit_breaker_orders_limit: int = 50  # Max orders per minute
+    circuit_breaker_max_loss_percent: float = 5.0  # Max loss % per hour
+    circuit_breaker_price_deviation: float = 10.0  # Max price deviation %
+    circuit_breaker_cooldown: int = 300  # Cooldown in seconds after trip
+
     # Logging
     log_level: str = "INFO"
 

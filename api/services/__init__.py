@@ -5,6 +5,7 @@ from api.services.credential_service import (
     CredentialService,
     CredentialValidationError,
 )
+from api.services.order_service import OrderService
 from api.services.encryption import (
     EncryptionError,
     EncryptionService,
@@ -45,4 +46,6 @@ __all__ = [
     # Credential Service
     "CredentialService",
     "CredentialValidationError",
+    # Order Service
+    "OrderService",
 ]

@@ -234,3 +234,532 @@ class TestCredentialsEndpoints:
         # Verify it's gone
         response = await auth_client.get(f"/credentials/{test_credential.id}")
         assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+class TestOrdersEndpoints:
+    """Tests for orders management endpoints."""
+
+    async def test_list_orders_requires_auth(
+        self, async_client: AsyncClient
+    ) -> None:
+        """Test listing orders requires authentication."""
+        from uuid import uuid4
+
+        fake_bot_id = str(uuid4())
+        response = await async_client.get(f"/orders/bots/{fake_bot_id}/orders")
+
+        assert response.status_code == 401
+
+    async def test_list_orders_bot_not_found(
+        self, auth_client: AsyncClient
+    ) -> None:
+        """Test listing orders for non-existent bot."""
+        from uuid import uuid4
+
+        fake_bot_id = str(uuid4())
+        response = await auth_client.get(f"/orders/bots/{fake_bot_id}/orders")
+
+        assert response.status_code == 404
+
+    async def test_list_orders_empty(
+        self,
+        auth_client: AsyncClient,
+        db_session,
+        test_user: User,
+        test_credential: ExchangeCredential,
+    ) -> None:
+        """Test listing orders when none exist."""
+        from api.models.orm import Bot
+
+        # Create a test bot
+        bot = Bot(
+            user_id=test_user.id,
+            credential_id=test_credential.id,
+            name="Test Bot",
+            strategy="grid",
+            exchange="binance",
+            symbol="BTC/USDT",
+            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            status="stopped",
+        )
+        db_session.add(bot)
+        await db_session.flush()
+        await db_session.refresh(bot)
+
+        response = await auth_client.get(f"/orders/bots/{bot.id}/orders")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["orders"] == []
+        assert data["total"] == 0
+
+    async def test_list_orders_with_data(
+        self,
+        auth_client: AsyncClient,
+        db_session,
+        test_user: User,
+        test_credential: ExchangeCredential,
+    ) -> None:
+        """Test listing orders when orders exist."""
+        from decimal import Decimal
+
+        from api.models.orm import Bot, Order
+
+        # Create a test bot
+        bot = Bot(
+            user_id=test_user.id,
+            credential_id=test_credential.id,
+            name="Test Bot",
+            strategy="grid",
+            exchange="binance",
+            symbol="BTC/USDT",
+            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            status="stopped",
+        )
+        db_session.add(bot)
+        await db_session.flush()
+
+        # Create orders
+        order1 = Order(
+            bot_id=bot.id,
+            symbol="BTC/USDT",
+            side="buy",
+            type="limit",
+            price=Decimal("49000"),
+            quantity=Decimal("0.1"),
+            filled_quantity=Decimal("0"),
+            status="open",
+        )
+        order2 = Order(
+            bot_id=bot.id,
+            symbol="BTC/USDT",
+            side="sell",
+            type="limit",
+            price=Decimal("51000"),
+            quantity=Decimal("0.1"),
+            filled_quantity=Decimal("0"),
+            status="open",
+        )
+        db_session.add_all([order1, order2])
+        await db_session.flush()
+
+        response = await auth_client.get(f"/orders/bots/{bot.id}/orders")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 2
+        assert len(data["orders"]) == 2
+
+    async def test_list_orders_with_status_filter(
+        self,
+        auth_client: AsyncClient,
+        db_session,
+        test_user: User,
+        test_credential: ExchangeCredential,
+    ) -> None:
+        """Test filtering orders by status."""
+        from decimal import Decimal
+
+        from api.models.orm import Bot, Order
+
+        # Create a test bot
+        bot = Bot(
+            user_id=test_user.id,
+            credential_id=test_credential.id,
+            name="Test Bot",
+            strategy="grid",
+            exchange="binance",
+            symbol="BTC/USDT",
+            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            status="stopped",
+        )
+        db_session.add(bot)
+        await db_session.flush()
+
+        # Create orders with different statuses
+        order1 = Order(
+            bot_id=bot.id,
+            symbol="BTC/USDT",
+            side="buy",
+            type="limit",
+            price=Decimal("49000"),
+            quantity=Decimal("0.1"),
+            filled_quantity=Decimal("0"),
+            status="open",
+        )
+        order2 = Order(
+            bot_id=bot.id,
+            symbol="BTC/USDT",
+            side="sell",
+            type="limit",
+            price=Decimal("51000"),
+            quantity=Decimal("0.1"),
+            filled_quantity=Decimal("0.1"),
+            status="filled",
+        )
+        db_session.add_all([order1, order2])
+        await db_session.flush()
+
+        # Filter by open status
+        response = await auth_client.get(f"/orders/bots/{bot.id}/orders?status=open")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 1
+        assert data["orders"][0]["status"] == "open"
+
+    async def test_get_open_orders(
+        self,
+        auth_client: AsyncClient,
+        db_session,
+        test_user: User,
+        test_credential: ExchangeCredential,
+    ) -> None:
+        """Test getting only open orders."""
+        from decimal import Decimal
+
+        from api.models.orm import Bot, Order
+
+        # Create a test bot
+        bot = Bot(
+            user_id=test_user.id,
+            credential_id=test_credential.id,
+            name="Test Bot",
+            strategy="grid",
+            exchange="binance",
+            symbol="BTC/USDT",
+            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            status="running",
+        )
+        db_session.add(bot)
+        await db_session.flush()
+
+        # Create orders
+        order1 = Order(
+            bot_id=bot.id,
+            symbol="BTC/USDT",
+            side="buy",
+            type="limit",
+            price=Decimal("49000"),
+            quantity=Decimal("0.1"),
+            filled_quantity=Decimal("0"),
+            status="open",
+        )
+        order2 = Order(
+            bot_id=bot.id,
+            symbol="BTC/USDT",
+            side="buy",
+            type="limit",
+            price=Decimal("48000"),
+            quantity=Decimal("0.1"),
+            filled_quantity=Decimal("0.05"),
+            status="partially_filled",
+        )
+        order3 = Order(
+            bot_id=bot.id,
+            symbol="BTC/USDT",
+            side="sell",
+            type="limit",
+            price=Decimal("51000"),
+            quantity=Decimal("0.1"),
+            filled_quantity=Decimal("0.1"),
+            status="filled",
+        )
+        db_session.add_all([order1, order2, order3])
+        await db_session.flush()
+
+        response = await auth_client.get(f"/orders/bots/{bot.id}/orders/open")
+
+        assert response.status_code == 200
+        data = response.json()
+        # Only open and partially_filled should be returned
+        assert len(data) == 2
+        statuses = [o["status"] for o in data]
+        assert "open" in statuses
+        assert "partially_filled" in statuses
+        assert "filled" not in statuses
+
+    async def test_get_trades_empty(
+        self,
+        auth_client: AsyncClient,
+        db_session,
+        test_user: User,
+        test_credential: ExchangeCredential,
+    ) -> None:
+        """Test getting trades when none exist."""
+        from api.models.orm import Bot
+
+        # Create a test bot
+        bot = Bot(
+            user_id=test_user.id,
+            credential_id=test_credential.id,
+            name="Test Bot",
+            strategy="grid",
+            exchange="binance",
+            symbol="BTC/USDT",
+            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            status="stopped",
+        )
+        db_session.add(bot)
+        await db_session.flush()
+
+        response = await auth_client.get(f"/orders/bots/{bot.id}/trades")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["trades"] == []
+        assert data["total"] == 0
+
+    async def test_get_trades_with_data(
+        self,
+        auth_client: AsyncClient,
+        db_session,
+        test_user: User,
+        test_credential: ExchangeCredential,
+    ) -> None:
+        """Test getting trades when trades exist."""
+        from datetime import datetime, timedelta, timezone
+        from decimal import Decimal
+
+        from api.models.orm import Bot, Trade
+
+        # Create a test bot
+        bot = Bot(
+            user_id=test_user.id,
+            credential_id=test_credential.id,
+            name="Test Bot",
+            strategy="grid",
+            exchange="binance",
+            symbol="BTC/USDT",
+            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            status="running",
+        )
+        db_session.add(bot)
+        await db_session.flush()
+
+        # Create trades with different timestamps
+        now = datetime.now(timezone.utc)
+        trade1 = Trade(
+            bot_id=bot.id,
+            symbol="BTC/USDT",
+            side="buy",
+            price=Decimal("49000"),
+            quantity=Decimal("0.1"),
+            fee=Decimal("0.01"),
+            fee_currency="USDT",
+            timestamp=now - timedelta(seconds=10),
+        )
+        trade2 = Trade(
+            bot_id=bot.id,
+            symbol="BTC/USDT",
+            side="sell",
+            price=Decimal("51000"),
+            quantity=Decimal("0.1"),
+            fee=Decimal("0.01"),
+            fee_currency="USDT",
+            realized_pnl=Decimal("200"),
+            timestamp=now,
+        )
+        db_session.add_all([trade1, trade2])
+        await db_session.flush()
+
+        response = await auth_client.get(f"/orders/bots/{bot.id}/trades")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 2
+        assert len(data["trades"]) == 2
+
+    async def test_get_statistics(
+        self,
+        auth_client: AsyncClient,
+        db_session,
+        test_user: User,
+        test_credential: ExchangeCredential,
+    ) -> None:
+        """Test getting bot statistics."""
+        from datetime import datetime, timedelta, timezone
+        from decimal import Decimal
+
+        from api.models.orm import Bot, Order, Trade
+
+        # Create a test bot
+        bot = Bot(
+            user_id=test_user.id,
+            credential_id=test_credential.id,
+            name="Test Bot",
+            strategy="grid",
+            exchange="binance",
+            symbol="BTC/USDT",
+            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            status="running",
+        )
+        db_session.add(bot)
+        await db_session.flush()
+
+        # Create orders with different statuses
+        orders = [
+            Order(bot_id=bot.id, symbol="BTC/USDT", side="buy", type="limit",
+                  price=Decimal("49000"), quantity=Decimal("0.1"), filled_quantity=Decimal("0"), status="open"),
+            Order(bot_id=bot.id, symbol="BTC/USDT", side="buy", type="limit",
+                  price=Decimal("48000"), quantity=Decimal("0.1"), filled_quantity=Decimal("0.1"), status="filled"),
+            Order(bot_id=bot.id, symbol="BTC/USDT", side="sell", type="limit",
+                  price=Decimal("51000"), quantity=Decimal("0.1"), filled_quantity=Decimal("0.1"), status="filled"),
+        ]
+        db_session.add_all(orders)
+
+        # Create trades with different timestamps
+        now = datetime.now(timezone.utc)
+        trades = [
+            Trade(bot_id=bot.id, symbol="BTC/USDT", side="buy",
+                  price=Decimal("48000"), quantity=Decimal("0.1"), fee=Decimal("0.01"),
+                  timestamp=now - timedelta(seconds=10)),
+            Trade(bot_id=bot.id, symbol="BTC/USDT", side="sell",
+                  price=Decimal("51000"), quantity=Decimal("0.1"), fee=Decimal("0.01"), realized_pnl=Decimal("300"),
+                  timestamp=now),
+        ]
+        db_session.add_all(trades)
+        await db_session.flush()
+
+        response = await auth_client.get(f"/orders/bots/{bot.id}/statistics")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Check orders stats
+        assert data["orders"]["total"] == 3
+        assert data["orders"]["by_status"]["open"] == 1
+        assert data["orders"]["by_status"]["filled"] == 2
+
+        # Check trades stats
+        assert data["trades"]["total"] == 2
+        assert data["trades"]["total_pnl"] == 300.0
+
+    async def test_cancel_order_not_found(
+        self,
+        auth_client: AsyncClient,
+        db_session,
+        test_user: User,
+        test_credential: ExchangeCredential,
+    ) -> None:
+        """Test cancelling non-existent order."""
+        from uuid import uuid4
+
+        from api.models.orm import Bot
+
+        # Create a test bot
+        bot = Bot(
+            user_id=test_user.id,
+            credential_id=test_credential.id,
+            name="Test Bot",
+            strategy="grid",
+            exchange="binance",
+            symbol="BTC/USDT",
+            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            status="stopped",
+        )
+        db_session.add(bot)
+        await db_session.flush()
+
+        fake_order_id = str(uuid4())
+        response = await auth_client.post(
+            f"/orders/bots/{bot.id}/orders/{fake_order_id}/cancel"
+        )
+
+        assert response.status_code == 404
+
+    async def test_cancel_order_success(
+        self,
+        auth_client: AsyncClient,
+        db_session,
+        test_user: User,
+        test_credential: ExchangeCredential,
+    ) -> None:
+        """Test successfully cancelling an open order."""
+        from decimal import Decimal
+
+        from api.models.orm import Bot, Order
+
+        # Create a test bot
+        bot = Bot(
+            user_id=test_user.id,
+            credential_id=test_credential.id,
+            name="Test Bot",
+            strategy="grid",
+            exchange="binance",
+            symbol="BTC/USDT",
+            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            status="running",
+        )
+        db_session.add(bot)
+        await db_session.flush()
+
+        # Create an open order
+        order = Order(
+            bot_id=bot.id,
+            symbol="BTC/USDT",
+            side="buy",
+            type="limit",
+            price=Decimal("49000"),
+            quantity=Decimal("0.1"),
+            filled_quantity=Decimal("0"),
+            status="open",
+        )
+        db_session.add(order)
+        await db_session.flush()
+
+        response = await auth_client.post(
+            f"/orders/bots/{bot.id}/orders/{order.id}/cancel"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "cancelled"
+        assert "Order cancellation requested" in data["message"]
+
+    async def test_cancel_filled_order_fails(
+        self,
+        auth_client: AsyncClient,
+        db_session,
+        test_user: User,
+        test_credential: ExchangeCredential,
+    ) -> None:
+        """Test that cancelling a filled order fails."""
+        from decimal import Decimal
+
+        from api.models.orm import Bot, Order
+
+        # Create a test bot
+        bot = Bot(
+            user_id=test_user.id,
+            credential_id=test_credential.id,
+            name="Test Bot",
+            strategy="grid",
+            exchange="binance",
+            symbol="BTC/USDT",
+            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            status="running",
+        )
+        db_session.add(bot)
+        await db_session.flush()
+
+        # Create a filled order
+        order = Order(
+            bot_id=bot.id,
+            symbol="BTC/USDT",
+            side="buy",
+            type="limit",
+            price=Decimal("49000"),
+            quantity=Decimal("0.1"),
+            filled_quantity=Decimal("0.1"),
+            status="filled",
+        )
+        db_session.add(order)
+        await db_session.flush()
+
+        response = await auth_client.post(
+            f"/orders/bots/{bot.id}/orders/{order.id}/cancel"
+        )
+
+        assert response.status_code == 409  # Conflict
