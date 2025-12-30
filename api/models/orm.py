@@ -19,6 +19,7 @@ class User(Base):
     """User account model."""
 
     __tablename__ = "users"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -66,6 +67,10 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    bot_events: Mapped[list["BotEvent"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
     backtests: Mapped[list["Backtest"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
@@ -76,6 +81,7 @@ class ExchangeCredential(Base):
     """Exchange API credentials (encrypted)."""
 
     __tablename__ = "exchange_credentials"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -126,6 +132,7 @@ class Bot(Base):
     """Trading bot configuration."""
 
     __tablename__ = "bots"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -207,12 +214,66 @@ class Bot(Base):
         back_populates="bot",
         cascade="all, delete-orphan",
     )
+    events: Mapped[list["BotEvent"]] = relationship(
+        back_populates="bot",
+        cascade="all, delete-orphan",
+    )
+
+
+class BotEvent(Base):
+    """Bot lifecycle and status events."""
+
+    __tablename__ = "bot_events"
+    __table_args__ = {"extend_existing": True}
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    bot_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("bots.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+    source: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+    reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    metadata_json: Mapped[dict] = mapped_column(
+        "metadata",
+        JSONB,
+        default=dict,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("NOW()"),
+    )
+
+    bot: Mapped["Bot"] = relationship(back_populates="events")
+    user: Mapped["User | None"] = relationship(back_populates="bot_events")
 
 
 class Backtest(Base):
     """Backtest results."""
 
     __tablename__ = "backtests"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -273,6 +334,7 @@ class Order(Base):
     """Order model for tracking exchange orders."""
 
     __tablename__ = "orders"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -361,6 +423,11 @@ class Trade(Base):
         ForeignKey("orders.id", ondelete="SET NULL"),
         nullable=True,
     )
+    exchange_trade_id: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
     symbol: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
@@ -398,7 +465,10 @@ class Trade(Base):
 
     # Composite primary key for TimescaleDB hypertable
     __table_args__ = (
-        {"timescaledb_hypertable": {"time_column": "timestamp"}},
+        {
+            "timescaledb_hypertable": {"time_column": "timestamp"},
+            "extend_existing": True,
+        },
     )
 
     # Relationships
@@ -457,5 +527,8 @@ class BotMetrics(Base):
 
     # Composite primary key for TimescaleDB hypertable
     __table_args__ = (
-        {"timescaledb_hypertable": {"time_column": "timestamp"}},
+        {
+            "timescaledb_hypertable": {"time_column": "timestamp"},
+            "extend_existing": True,
+        },
     )

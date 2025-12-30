@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.orm import Order, Trade, Bot
@@ -335,23 +335,44 @@ class OrderService:
         # Trade statistics
         trade_stats = await self.db.execute(
             select(
-                func.count().label("total_trades"),
-                func.sum(Trade.quantity).label("total_volume"),
+                func.count(Trade.id).label("total_trades"),
+                func.sum(
+                    case((Trade.side == "buy", 1), else_=0)
+                ).label("buy_count"),
+                func.sum(
+                    case((Trade.side == "sell", 1), else_=0)
+                ).label("sell_count"),
+                func.sum(
+                    case((Trade.realized_pnl > 0, 1), else_=0)
+                ).label("winning_trades"),
+                func.sum(Trade.price * Trade.quantity).label("total_volume"),
                 func.sum(Trade.fee).label("total_fees"),
                 func.sum(Trade.realized_pnl).label("total_pnl"),
             ).where(Trade.bot_id == bot_id)
         )
         trade_row = trade_stats.one()
 
+        open_count = (
+            order_counts.get("open", 0)
+            + order_counts.get("pending", 0)
+            + order_counts.get("partially_filled", 0)
+        )
+
         return {
             "orders": {
                 "total": sum(order_counts.values()),
+                "open": open_count,
+                "filled": order_counts.get("filled", 0),
+                "cancelled": order_counts.get("cancelled", 0),
                 "by_status": order_counts,
             },
             "trades": {
                 "total": trade_row[0] or 0,
-                "total_volume": float(trade_row[1] or 0),
-                "total_fees": float(trade_row[2] or 0),
-                "total_pnl": float(trade_row[3] or 0),
+                "buy_count": trade_row[1] or 0,
+                "sell_count": trade_row[2] or 0,
+                "winning_trades": trade_row[3] or 0,
+                "total_volume": float(trade_row[4] or 0),
+                "total_fees": float(trade_row[5] or 0),
+                "total_pnl": float(trade_row[6] or 0),
             },
         }

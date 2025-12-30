@@ -52,6 +52,18 @@ CREATE TABLE IF NOT EXISTS bots (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Bot events table
+CREATE TABLE IF NOT EXISTS bot_events (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    bot_id UUID NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    event_type VARCHAR(50) NOT NULL,
+    source VARCHAR(50) NOT NULL,
+    reason TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Orders table
 CREATE TABLE IF NOT EXISTS orders (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -75,6 +87,7 @@ CREATE TABLE IF NOT EXISTS trades (
     id UUID DEFAULT uuid_generate_v4(),
     bot_id UUID NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
     order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
+    exchange_trade_id VARCHAR(100),
     symbol VARCHAR(20) NOT NULL,
     side VARCHAR(10) NOT NULL CHECK (side IN ('buy', 'sell')),
     price DECIMAL(20, 8) NOT NULL,
@@ -143,9 +156,12 @@ CREATE TABLE IF NOT EXISTS backtests (
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_bots_user_id ON bots(user_id);
 CREATE INDEX IF NOT EXISTS idx_bots_status ON bots(status);
+CREATE INDEX IF NOT EXISTS idx_bot_events_bot_id ON bot_events(bot_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bot_events_event_type ON bot_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_orders_bot_id ON orders(bot_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_trades_bot_id ON trades(bot_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_trades_exchange_trade_id ON trades(exchange_trade_id);
 CREATE INDEX IF NOT EXISTS idx_ohlcv_lookup ON ohlcv_cache(exchange, symbol, timeframe, timestamp DESC);
 
 -- Update timestamp trigger function
@@ -209,3 +225,18 @@ ALTER TABLE bots ADD COLUMN IF NOT EXISTS unrealized_pnl DECIMAL(20, 8) DEFAULT 
 
 -- Add strategy_state column for DCA state persistence
 ALTER TABLE bots ADD COLUMN IF NOT EXISTS strategy_state JSONB DEFAULT '{}';
+
+-- Add bot events table for existing databases
+CREATE TABLE IF NOT EXISTS bot_events (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    bot_id UUID NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    event_type VARCHAR(50) NOT NULL,
+    source VARCHAR(50) NOT NULL,
+    reason TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bot_events_bot_id ON bot_events(bot_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bot_events_event_type ON bot_events(event_type);

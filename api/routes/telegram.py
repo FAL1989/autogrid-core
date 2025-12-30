@@ -15,6 +15,7 @@ from api.core.config import get_settings
 from api.core.database import get_db
 from api.core.dependencies import get_current_user
 from api.models.orm import Bot, ExchangeCredential, User
+from api.services.bot_event_service import record_bot_event
 from api.services.bot_service import BotService
 from api.services.credential_service import CredentialService
 from api.services.telegram_link import (
@@ -273,7 +274,21 @@ async def _handle_confirm_stop(chat_id: str, db: AsyncSession) -> None:
         return
 
     await bot_service.update_status(bot.id, "stopping")
-    task = stop_trading_bot.delay(str(bot.id))
+    await record_bot_event(
+        db=db,
+        bot_id=bot.id,
+        user_id=user.id,
+        event_type="stop_requested",
+        source="telegram",
+        reason="user_request",
+        metadata={"chat_id": chat_id, "command": "/confirm_stop"},
+    )
+    task = stop_trading_bot.delay(
+        str(bot.id),
+        source="telegram",
+        reason="user_request",
+        metadata={"chat_id": chat_id, "command": "/confirm_stop"},
+    )
 
     _pending_stop.pop(chat_id, None)
     await send_message(

@@ -632,11 +632,40 @@ class OrderManager:
                 except Exception as e:
                     logger.warning(f"Failed to queue Telegram fill notification: {e}")
 
+                realized_pnl = None
                 if self.on_order_filled:
                     if asyncio.iscoroutinefunction(self.on_order_filled):
-                        await self.on_order_filled(order)
+                        realized_pnl = await self.on_order_filled(order)
                     else:
-                        self.on_order_filled(order)
+                        realized_pnl = self.on_order_filled(order)
+
+                try:
+                    from bot.tasks import process_order_fill
+                    fill_payload = {
+                        "filledQuantity": str(
+                            data.get("filledQuantity", order.filled_quantity)
+                        ),
+                        "avgPrice": str(
+                            data.get("avgPrice", order.average_fill_price or 0)
+                        ),
+                        "status": "filled",
+                        "fee": data.get("fee", data.get("commission", 0)),
+                        "feeAsset": data.get(
+                            "feeAsset", data.get("commissionAsset")
+                        ),
+                        "tradeId": data.get("tradeId"),
+                        "timestamp": data.get("timestamp"),
+                        "realizedPnl": str(realized_pnl)
+                        if realized_pnl is not None
+                        else None,
+                    }
+                    process_order_fill.delay(
+                        str(order.bot_id),
+                        str(order.id),
+                        fill_payload,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to enqueue fill persistence: {e}")
 
         elif status == "cancelled":
             if order.can_transition_to(OrderState.CANCELLED):

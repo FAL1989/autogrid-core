@@ -7,6 +7,7 @@ Background tasks for trading operations, data fetching, and scheduled jobs.
 import asyncio
 import logging
 import os
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -62,6 +63,10 @@ celery_app.conf.beat_schedule = {
     "sync-bot-metrics-every-30s": {
         "task": "bot.tasks.sync_running_bots_metrics",
         "schedule": 30.0,  # Every 30 seconds
+    },
+    "reconcile-trades-every-60s": {
+        "task": "bot.tasks.reconcile_running_bots_trades",
+        "schedule": 300.0,  # Every 5 minutes
     },
     "cleanup-old-data-daily": {
         "task": "bot.tasks.cleanup_old_data",
@@ -147,7 +152,7 @@ def start_trading_bot(self, bot_id: str) -> dict:
 async def _start_bot_async(bot_id: str) -> dict:
     """Async implementation of bot startup."""
     import redis.asyncio as redis_async
-    from sqlalchemy import select
+    from sqlalchemy import func, select
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -369,7 +374,13 @@ async def _start_bot_async(bot_id: str) -> dict:
 
 
 @celery_app.task(bind=True)
-def stop_trading_bot(self, bot_id: str) -> dict:
+def stop_trading_bot(
+    self,
+    bot_id: str,
+    source: str | None = None,
+    reason: str | None = None,
+    metadata: dict | None = None,
+) -> dict:
     """
     Stop a trading bot.
 
@@ -387,16 +398,21 @@ def stop_trading_bot(self, bot_id: str) -> dict:
     logger.info(f"Stopping bot {bot_id}")
 
     try:
-        result = _run_async(_stop_bot_async(bot_id))
+        result = _run_async(_stop_bot_async(bot_id, source, reason, metadata))
         return result
     except Exception as e:
         logger.error(f"Failed to stop bot {bot_id}: {e}")
         return {"status": "error", "message": str(e)}
 
 
-async def _stop_bot_async(bot_id: str) -> dict:
+async def _stop_bot_async(
+    bot_id: str,
+    source: str | None = None,
+    reason: str | None = None,
+    metadata: dict | None = None,
+) -> dict:
     """Async implementation of bot shutdown."""
-    from sqlalchemy import select
+    from sqlalchemy import func, select, update
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -448,6 +464,18 @@ async def _stop_bot_async(bot_id: str) -> dict:
 
         if bot:
             bot.status = "stopped"
+            event_metadata = dict(metadata or {})
+            event_metadata["orders_cancelled"] = orders_cancelled
+            from api.services.bot_event_service import record_bot_event
+            await record_bot_event(
+                db=db,
+                bot_id=bot.id,
+                user_id=bot.user_id,
+                event_type="stop_executed",
+                source=source or "system",
+                reason=reason,
+                metadata=event_metadata,
+            )
             await db.commit()
 
             # Broadcast bot status update via WebSocket
@@ -496,7 +524,11 @@ def tick_running_bots(self) -> dict:
             errors += 1
             logger.error(f"Tick failed for bot {bot_id}: {e}")
             _run_async(_update_bot_status(bot_id, "error", str(e)))
-            stop_trading_bot.delay(bot_id)
+            stop_trading_bot.delay(
+                bot_id,
+                source="tick_error",
+                reason=str(e),
+            )
         finally:
             bot_data["tick_in_progress"] = False
 
@@ -520,7 +552,11 @@ async def _tick_bot_async(bot_id: str, bot_data: dict[str, Any]) -> None:
 
     if engine.strategy.should_stop():
         logger.info(f"Bot {bot_id} requested stop by strategy")
-        stop_trading_bot.delay(bot_id)
+        stop_trading_bot.delay(
+            bot_id,
+            source="strategy",
+            reason="strategy_stop",
+        )
 
 
 # =============================================================================
@@ -560,7 +596,7 @@ async def _process_order_fill_async(
     bot_id: str, order_id: str, fill_data: dict
 ) -> dict:
     """Async implementation of order fill processing."""
-    from sqlalchemy import select
+    from sqlalchemy import func, select
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -580,28 +616,127 @@ async def _process_order_fill_async(
         if not order:
             return {"status": "error", "message": "Order not found"}
 
+        filled_quantity_raw = fill_data.get(
+            "filledQuantity",
+            fill_data.get("filled", fill_data.get("filled_quantity", 0)),
+        )
+        avg_price_raw = fill_data.get(
+            "avgPrice",
+            fill_data.get("average", fill_data.get("price")),
+        )
+        status_raw = str(fill_data.get("status", "filled")).lower()
+        if status_raw in ("closed", "filled", "trade"):
+            status = "filled"
+        elif status_raw in ("canceled", "cancelled", "expired"):
+            status = "cancelled"
+        else:
+            status = status_raw
+
         # Update order
-        order.filled_quantity = Decimal(str(fill_data.get("filledQuantity", 0)))
+        order.filled_quantity = Decimal(str(filled_quantity_raw or 0))
         order.average_fill_price = (
-            Decimal(str(fill_data["avgPrice"]))
-            if fill_data.get("avgPrice")
+            Decimal(str(avg_price_raw))
+            if avg_price_raw is not None
             else None
         )
-        order.status = fill_data.get("status", "filled")
+        order.status = status
+
+        exchange_trade_id = (
+            fill_data.get("exchangeTradeId")
+            or fill_data.get("tradeId")
+            or fill_data.get("id")
+        )
+        realized_pnl_raw = (
+            fill_data.get("realizedPnl")
+            or fill_data.get("realized_pnl")
+        )
+
+        existing_trade = None
+        if exchange_trade_id:
+            existing_trade = (
+                await db.execute(
+                    select(Trade).where(
+                        Trade.exchange_trade_id == str(exchange_trade_id)
+                    )
+                )
+            ).scalar_one_or_none()
+        if existing_trade is None:
+            existing_trade = (
+                await db.execute(
+                    select(Trade).where(
+                        Trade.order_id == order.id,
+                        Trade.quantity == order.filled_quantity,
+                        Trade.price
+                        == (order.average_fill_price or order.price or Decimal("0")),
+                    )
+                )
+            ).scalar_one_or_none()
+        if existing_trade:
+            if (
+                realized_pnl_raw is not None
+                and existing_trade.realized_pnl is None
+            ):
+                existing_trade.realized_pnl = Decimal(str(realized_pnl_raw))
+            await db.commit()
+            return {
+                "status": "skipped",
+                "order_id": order_id,
+                "reason": "trade_exists",
+            }
+
+        fee_value = fill_data.get("fee", fill_data.get("commission", 0))
+        fee_currency = fill_data.get("feeAsset", fill_data.get("commissionAsset"))
+        if isinstance(fee_value, dict):
+            fee_currency = fee_value.get("currency") or fee_currency
+            fee_value = fee_value.get("cost", 0)
+
+        timestamp_value = (
+            fill_data.get("timestamp")
+            or fill_data.get("transactTime")
+            or fill_data.get("T")
+        )
+        trade_timestamp = None
+        if timestamp_value:
+            ts = int(timestamp_value)
+            if ts > 1_000_000_000_000:
+                ts = ts / 1000
+            trade_timestamp = datetime.fromtimestamp(ts, tz=timezone.utc)
 
         # Create trade record
         trade = Trade(
             bot_id=UUID(bot_id),
             order_id=UUID(order_id),
+            exchange_trade_id=str(exchange_trade_id)
+            if exchange_trade_id is not None
+            else None,
             symbol=order.symbol,
             side=order.side,
             price=order.average_fill_price or order.price or Decimal("0"),
             quantity=order.filled_quantity,
-            fee=Decimal(str(fill_data.get("fee", 0))),
-            fee_currency=fill_data.get("feeAsset"),
+            fee=Decimal(str(fee_value or 0)),
+            fee_currency=fee_currency,
+            realized_pnl=Decimal(str(realized_pnl_raw))
+            if realized_pnl_raw is not None
+            else None,
         )
+        if trade_timestamp:
+            trade.timestamp = trade_timestamp
         db.add(trade)
 
+        await db.commit()
+
+        realized_sum = (
+            await db.execute(
+                select(func.coalesce(func.sum(Trade.realized_pnl), 0)).where(
+                    Trade.bot_id == order.bot_id
+                )
+            )
+        ).scalar_one()
+        await db.execute(
+            update(Bot)
+            .where(Bot.id == order.bot_id)
+            .values(realized_pnl=Decimal(str(realized_sum)))
+        )
         await db.commit()
 
         # Record P&L in circuit breaker (if loss)
@@ -679,6 +814,267 @@ def poll_running_mexc_bots(self) -> dict:
 
 
 # =============================================================================
+# Trade Reconciliation Tasks
+# =============================================================================
+
+
+@celery_app.task(bind=True, max_retries=3)
+def reconcile_running_bots_trades(self) -> dict:
+    """
+    Reconcile recent trades for all running bots.
+
+    This backfills any missed fills by querying the exchange directly.
+    """
+    created = 0
+    skipped = 0
+    errors = 0
+
+    bot_ids = list(_running_bots.keys())
+    if not bot_ids:
+        try:
+            bot_ids = _run_async(_list_recent_bot_ids_async())
+        except Exception as e:
+            logger.error(f"Failed to list recent bots for reconciliation: {e}")
+
+    for bot_id in bot_ids:
+        try:
+            result = _run_async(_reconcile_bot_trades_async(bot_id))
+            created += int(result.get("created", 0))
+            skipped += int(result.get("skipped", 0))
+        except Exception as e:
+            errors += 1
+            logger.error(f"Trade reconcile failed for bot {bot_id}: {e}")
+
+    return {"status": "ok", "created": created, "skipped": skipped, "errors": errors}
+
+
+async def _list_recent_bot_ids_async(hours: int = 24) -> list[str]:
+    """List bot IDs updated within the last N hours."""
+    from sqlalchemy import func, select
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from api.core.config import get_settings
+    from api.models.orm import Bot
+
+    settings = get_settings()
+    engine = create_async_engine(settings.async_database_url)
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    async with async_session() as db:
+        result = await db.execute(
+            select(Bot.id).where(Bot.updated_at >= since)
+        )
+        bot_ids = [str(row[0]) for row in result.all()]
+
+    await engine.dispose()
+    return bot_ids
+
+
+async def _reconcile_bot_trades_async(
+    bot_id: str,
+    since_minutes: int = 1440,
+    limit: int = 100,
+) -> dict:
+    """Fetch recent trades from exchange and persist missing ones."""
+    from sqlalchemy import func, select
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from api.core.config import get_settings
+    from api.models.orm import Bot, ExchangeCredential, Order as OrderORM, Trade
+    from api.services.credential_service import CredentialService
+    from bot.exchange.connector import CCXTConnector
+
+    settings = get_settings()
+    engine = create_async_engine(settings.async_database_url)
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    created = 0
+    skipped = 0
+    connector = None
+
+    try:
+        async with async_session() as db:
+            stmt = select(Bot).where(Bot.id == UUID(bot_id))
+            result = await db.execute(stmt)
+            bot = result.scalar_one_or_none()
+            if not bot:
+                return {"status": "skipped", "created": 0, "skipped": 1}
+
+            credential = await db.get(ExchangeCredential, bot.credential_id)
+            if not credential:
+                return {"status": "error", "message": "Credential not found"}
+
+            service = CredentialService(db)
+            api_key, api_secret = service.get_decrypted_keys(credential)
+
+            connector = CCXTConnector(
+                exchange_id=credential.exchange,
+                api_key=api_key,
+                api_secret=api_secret,
+                testnet=credential.is_testnet,
+            )
+            await connector.connect()
+
+            since = datetime.now(timezone.utc) - timedelta(minutes=since_minutes)
+            since_ms = int(since.timestamp() * 1000)
+            trades = await connector.fetch_my_trades(
+                bot.symbol,
+                since=since_ms,
+                limit=limit,
+            )
+
+            orders_result = await db.execute(
+                select(OrderORM).where(
+                    OrderORM.bot_id == bot.id,
+                    OrderORM.exchange_order_id.is_not(None),
+                )
+            )
+            orders_by_exchange = {
+                str(o.exchange_order_id): o for o in orders_result.scalars().all()
+            }
+
+            buy_lots: list[dict[str, Decimal]] = []
+            sorted_trades = sorted(
+                trades, key=lambda t: t.get("timestamp") or 0
+            )
+            base_symbol = None
+            quote_symbol = None
+            if bot.symbol and "/" in bot.symbol:
+                base_symbol, quote_symbol = bot.symbol.split("/", 1)
+
+            for trade_data in sorted_trades:
+                trade_id = trade_data.get("id")
+                exchange_order_id = trade_data.get("order")
+                if not exchange_order_id:
+                    skipped += 1
+                    continue
+
+                order = orders_by_exchange.get(str(exchange_order_id))
+                if not order:
+                    skipped += 1
+                    continue
+
+                price = Decimal(str(trade_data.get("price") or 0))
+                quantity = Decimal(
+                    str(trade_data.get("amount", trade_data.get("filled", 0)))
+                )
+                side = trade_data.get("side", order.side)
+
+                fee = trade_data.get("fee")
+                fee_cost = Decimal("0")
+                fee_currency = None
+                if isinstance(fee, dict):
+                    fee_cost = Decimal(str(fee.get("cost", 0) or 0))
+                    fee_currency = fee.get("currency")
+                elif fee is not None:
+                    fee_cost = Decimal(str(fee or 0))
+
+                fee_in_quote = Decimal("0")
+                if fee_currency and quote_symbol and base_symbol:
+                    if fee_currency == quote_symbol:
+                        fee_in_quote = fee_cost
+                    elif fee_currency == base_symbol:
+                        fee_in_quote = fee_cost * price
+
+                realized_pnl = Decimal("0")
+                if side == "buy":
+                    if quantity > 0:
+                        effective_price = price
+                        if fee_in_quote > 0:
+                            effective_price += fee_in_quote / quantity
+                        buy_lots.append({"price": effective_price, "quantity": quantity})
+                else:
+                    remaining = quantity
+                    while remaining > 0 and buy_lots:
+                        lot = buy_lots[0]
+                        use_qty = min(remaining, lot["quantity"])
+                        realized_pnl += (price - lot["price"]) * use_qty
+                        lot["quantity"] -= use_qty
+                        remaining -= use_qty
+                        if lot["quantity"] <= 0:
+                            buy_lots.pop(0)
+                    if fee_in_quote > 0:
+                        realized_pnl -= fee_in_quote
+
+                if trade_id:
+                    existing = (
+                        await db.execute(
+                            select(Trade).where(
+                                Trade.exchange_trade_id == str(trade_id)
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    if existing:
+                        if existing.realized_pnl is None:
+                            existing.realized_pnl = realized_pnl
+                        skipped += 1
+                        continue
+
+                existing = (
+                    await db.execute(
+                        select(Trade).where(
+                            Trade.order_id == order.id,
+                            Trade.price == price,
+                            Trade.quantity == quantity,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if existing:
+                    if existing.realized_pnl is None:
+                        existing.realized_pnl = realized_pnl
+                    skipped += 1
+                    continue
+
+                timestamp_value = trade_data.get("timestamp")
+                trade_timestamp = None
+                if timestamp_value:
+                    ts = int(timestamp_value)
+                    if ts > 1_000_000_000_000:
+                        ts = ts / 1000
+                    trade_timestamp = datetime.fromtimestamp(ts, tz=timezone.utc)
+
+                trade = Trade(
+                    bot_id=bot.id,
+                    order_id=order.id,
+                    exchange_trade_id=str(trade_id) if trade_id else None,
+                    symbol=trade_data.get("symbol", bot.symbol),
+                    side=side,
+                    price=price,
+                    quantity=quantity,
+                    fee=Decimal(str(fee_cost or 0)),
+                    fee_currency=fee_currency,
+                    realized_pnl=realized_pnl,
+                )
+                if trade_timestamp:
+                    trade.timestamp = trade_timestamp
+                db.add(trade)
+                created += 1
+
+            await db.flush()
+            realized_sum = (
+                await db.execute(
+                    select(func.coalesce(func.sum(Trade.realized_pnl), 0)).where(
+                        Trade.bot_id == bot.id
+                    )
+                )
+            ).scalar_one()
+            bot.realized_pnl = Decimal(str(realized_sum))
+            if bot.status != "running":
+                bot.unrealized_pnl = Decimal("0")
+
+            await db.commit()
+    finally:
+        if connector:
+            await connector.disconnect()
+        await engine.dispose()
+
+    return {"status": "ok", "created": created, "skipped": skipped}
+
+
+# =============================================================================
 # Monitoring Tasks
 # =============================================================================
 
@@ -699,7 +1095,27 @@ def check_circuit_breakers(self) -> dict:
                 is_tripped = _run_async(circuit_breaker.is_tripped(UUID(bot_id)))
                 if is_tripped:
                     logger.warning(f"Circuit breaker tripped for bot {bot_id}")
-                    stop_trading_bot.delay(bot_id)
+                    investment_value = Decimal(
+                        str(bot_data.get("config", {}).get("investment") or 0)
+                    )
+                    status = _run_async(
+                        circuit_breaker.get_status(UUID(bot_id), investment_value)
+                    )
+                    reason = (
+                        status.trip_reason.value
+                        if status.trip_reason
+                        else "circuit_breaker_open"
+                    )
+                    stop_trading_bot.delay(
+                        bot_id,
+                        source="circuit_breaker",
+                        reason=reason,
+                        metadata={
+                            "orders_last_minute": status.orders_last_minute,
+                            "loss_last_hour": str(status.loss_last_hour),
+                            "cooldown_remaining": status.cooldown_remaining,
+                        },
+                    )
                     tripped += 1
         except Exception as e:
             logger.error(f"Error checking circuit breaker for {bot_id}: {e}")
@@ -728,7 +1144,11 @@ def check_bot_health(self) -> dict:
                 unhealthy += 1
                 logger.warning(f"Bot {bot_id} exchange disconnected")
                 # Attempt reconnection
-                stop_trading_bot.delay(bot_id)
+                stop_trading_bot.delay(
+                    bot_id,
+                    source="health_check",
+                    reason="exchange_disconnected",
+                )
         except Exception as e:
             logger.error(f"Health check failed for bot {bot_id}: {e}")
             unhealthy += 1

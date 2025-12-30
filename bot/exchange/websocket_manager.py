@@ -239,9 +239,13 @@ class BinanceWebSocket(WebSocketHandler):
                 "price": data.get("p"),
                 "quantity": data.get("q"),
                 "filledQuantity": data.get("z"),
+                "lastFilledQuantity": data.get("l"),
                 "avgPrice": data.get("ap") or data.get("L"),  # Average or last fill price
                 "commission": data.get("n"),
                 "commissionAsset": data.get("N"),
+                "fee": data.get("n"),
+                "feeAsset": data.get("N"),
+                "tradeId": data.get("t"),
                 "timestamp": data.get("T"),
             }
 

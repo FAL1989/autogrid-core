@@ -8,13 +8,14 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.database import get_db
 from api.core.dependencies import get_current_user
 from api.models.orm import User
+from api.services.bot_event_service import record_bot_event
 from api.services.bot_service import BotService
 
 router = APIRouter()
@@ -386,6 +387,7 @@ async def start_bot(
 @router.post("/{bot_id}/stop", response_model=BotActionResponse)
 async def stop_bot(
     bot_id: UUID,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> BotActionResponse:
@@ -419,10 +421,27 @@ async def stop_bot(
 
     # Update status to stopping
     await bot_service.update_status(bot_id, "stopping")
+    metadata = {
+        "ip": request.client.host if request.client else None,
+        "user_agent": request.headers.get("user-agent"),
+    }
+    await record_bot_event(
+        db=db,
+        bot_id=bot.id,
+        user_id=current_user.id,
+        event_type="stop_requested",
+        source="api",
+        reason="user_request",
+        metadata=metadata,
+    )
     await db.commit()
 
     # Dispatch Celery task to stop the bot
-    task = stop_trading_bot.delay(str(bot_id))
+    task = stop_trading_bot.delay(
+        str(bot_id),
+        source="api",
+        reason="user_request",
+    )
 
     return BotActionResponse(
         bot_id=bot_id,

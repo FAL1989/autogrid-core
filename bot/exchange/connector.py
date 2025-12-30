@@ -153,6 +153,26 @@ class ExchangeConnector(ABC):
         pass
 
     @abstractmethod
+    async def fetch_my_trades(
+        self,
+        symbol: str,
+        since: int | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """
+        Fetch recent trades for the authenticated user.
+
+        Args:
+            symbol: Trading pair
+            since: Timestamp in milliseconds
+            limit: Max number of trades
+
+        Returns:
+            List of trade dicts
+        """
+        pass
+
+    @abstractmethod
     async def fetch_ohlcv(
         self,
         symbol: str,
@@ -263,6 +283,19 @@ class CCXTConnector(ExchangeConnector):
     async def fetch_order(self, order_id: str, symbol: str) -> dict[str, Any]:
         """Fetch order via CCXT."""
         return await self._exchange.fetch_order(order_id, symbol)
+
+    async def fetch_my_trades(
+        self,
+        symbol: str,
+        since: int | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Fetch user trades via CCXT."""
+        return await self._exchange.fetch_my_trades(
+            symbol=symbol,
+            since=since,
+            limit=limit,
+        )
 
     async def fetch_ohlcv(
         self,

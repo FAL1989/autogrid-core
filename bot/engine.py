@@ -304,7 +304,7 @@ class BotEngine:
                 logger.error(f"Failed to place order: {e}")
                 order.status = "error"
 
-    async def handle_order_filled(self, order: ManagedOrder) -> None:
+    async def handle_order_filled(self, order: ManagedOrder) -> Decimal:
         """
         Handle order fill event from WebSocket or polling.
 
@@ -368,6 +368,8 @@ class BotEngine:
             f"Position: {self._position.get(symbol_base, 0)} {symbol_base} - "
             f"P&L: {realized_pnl}"
         )
+
+        return realized_pnl
 
     async def _handle_circuit_trip(self) -> None:
         """Handle circuit breaker trip."""
