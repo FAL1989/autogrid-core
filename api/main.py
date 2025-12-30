@@ -16,7 +16,7 @@ from sqlalchemy import text
 from api.core.config import get_settings
 from api.core.database import close_db, engine
 from api.core.rate_limiter import close_redis, init_redis
-from api.routes import auth, backtest, bots, credentials, orders, ws
+from api.routes import auth, backtest, bots, credentials, orders, reports, ws
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +91,7 @@ app.include_router(bots.router, prefix="/api/v1/bots", tags=["Bots"])
 app.include_router(backtest.router, prefix="/api/v1/backtest", tags=["Backtesting"])
 app.include_router(credentials.router, prefix="/api/v1/credentials", tags=["Credentials"])
 app.include_router(orders.router, prefix="/api/v1/orders", tags=["Orders"])
+app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
 app.include_router(ws.router, tags=["WebSocket"])
 
 

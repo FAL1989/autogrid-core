@@ -1,5 +1,5 @@
 """API Routes Package."""
 
-from api.routes import auth, backtest, bots, credentials
+from api.routes import auth, backtest, bots, credentials, reports
 
-__all__ = ["auth", "bots", "backtest", "credentials"]
+__all__ = ["auth", "bots", "backtest", "credentials", "reports"]

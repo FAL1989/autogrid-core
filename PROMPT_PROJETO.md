@@ -359,23 +359,23 @@ make docker-up
 - [x] ✅ Lista de bots com status real-time (WebSocket invalidations em `web/lib/websocket/ws-context.tsx`)
 - [x] ✅ Histórico de trades (`web/app/dashboard/trades/page.tsx`, `web/hooks/use-trades.ts`)
 
-#### 10. Implementar Visualização de Grid
-- [ ] Componente de visualização do grid
-- [ ] Mostrar ordens abertas no gráfico
-- [ ] Indicar fills com animação
+#### 10. Implementar Visualização de Grid ✅
+- [x] ✅ Componente de visualização do grid (`web/components/dashboard/grid-visualization.tsx`)
+- [x] ✅ Mostrar ordens abertas no gráfico (`web/hooks/use-grid-visualization.ts`)
+- [x] ✅ Indicar fills com animação (`web/components/dashboard/grid-visualization.tsx`)
 
 ### Sprint 4 - Backtesting & Analytics
 
-#### 11. Implementar Engine de Backtest
-- [ ] Carregar dados históricos (CCXT)
-- [ ] Simular execução de estratégia
-- [ ] Calcular métricas (Sharpe, Drawdown, Win Rate)
-- [ ] Gerar equity curve
+#### 11. Implementar Engine de Backtest ✅
+- [x] ✅ Carregar dados históricos (CCXT) (`api/services/backtest_service.py`)
+- [x] ✅ Simular execução de estratégia (`api/services/backtest_service.py`)
+- [x] ✅ Calcular métricas (Sharpe, Drawdown, Win Rate) (`api/services/backtest_service.py`)
+- [x] ✅ Gerar equity curve (`api/services/backtest_service.py`, `web/app/dashboard/backtest/page.tsx`)
 
-#### 12. Implementar Relatórios
-- [ ] Dashboard de performance por bot
-- [ ] Exportar trades para CSV
-- [ ] Comparar estratégias
+#### 12. Implementar Relatórios ✅
+- [x] ✅ Dashboard de performance por bot (`api/routes/reports.py`, `web/app/dashboard/reports/page.tsx`)
+- [x] ✅ Exportar trades para CSV (`api/routes/reports.py`, `web/app/dashboard/reports/page.tsx`)
+- [x] ✅ Comparar estratégias (`api/routes/reports.py`, `web/app/dashboard/reports/page.tsx`)
 
 ### Sprint 5 - Telegram & Notificações
 
