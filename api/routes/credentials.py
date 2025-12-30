@@ -85,6 +85,30 @@ class MarketsResponse(BaseModel):
     count: int
 
 
+class TickerResponse(BaseModel):
+    """Ticker response."""
+
+    exchange: str
+    symbol: str
+    last: float
+    bid: float | None = None
+    ask: float | None = None
+    timestamp: int | None = None
+
+
+class BalanceResponse(BaseModel):
+    """Balance response for a symbol."""
+
+    exchange: str
+    symbol: str
+    base: str
+    quote: str
+    free_base: float
+    free_quote: float
+    total_base: float
+    total_quote: float
+
+
 # =============================================================================
 # Endpoints
 # =============================================================================
@@ -303,4 +327,108 @@ async def refresh_markets(
         exchange=credential.exchange,
         markets=markets,
         count=len(markets),
+    )
+
+
+@router.get(
+    "/{credential_id}/ticker",
+    response_model=TickerResponse,
+    summary="Get current ticker",
+)
+async def get_ticker(
+    credential_id: UUID,
+    symbol: str = Query(..., min_length=1),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TickerResponse:
+    """
+    Fetch current ticker for a symbol using the exchange tied to the credential.
+    """
+    credential_service = CredentialService(db)
+
+    credential = await credential_service.get_by_id_for_user(
+        credential_id, current_user.id
+    )
+
+    if credential is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Credential not found",
+        )
+
+    try:
+        ticker = await credential_service.fetch_ticker(
+            credential_id, current_user.id, symbol
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to fetch ticker: {str(e)}",
+        )
+
+    return TickerResponse(
+        exchange=credential.exchange,
+        symbol=symbol,
+        last=float(ticker.get("last") or 0),
+        bid=float(ticker.get("bid")) if ticker.get("bid") is not None else None,
+        ask=float(ticker.get("ask")) if ticker.get("ask") is not None else None,
+        timestamp=ticker.get("timestamp"),
+    )
+
+
+@router.get(
+    "/{credential_id}/balance",
+    response_model=BalanceResponse,
+    summary="Get balance for a symbol",
+)
+async def get_balance(
+    credential_id: UUID,
+    symbol: str = Query(..., min_length=1),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> BalanceResponse:
+    """
+    Fetch available and total balances for a symbol's base/quote assets.
+    """
+    credential_service = CredentialService(db)
+
+    credential = await credential_service.get_by_id_for_user(
+        credential_id, current_user.id
+    )
+
+    if credential is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Credential not found",
+        )
+
+    try:
+        balance = await credential_service.fetch_balance(
+            credential_id, current_user.id
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to fetch balance: {str(e)}",
+        )
+
+    if "/" not in symbol:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Symbol must be in BASE/QUOTE format",
+        )
+
+    base, quote = symbol.split("/", 1)
+    free = balance.get("free", {}) if isinstance(balance, dict) else {}
+    total = balance.get("total", {}) if isinstance(balance, dict) else {}
+
+    return BalanceResponse(
+        exchange=credential.exchange,
+        symbol=symbol,
+        base=base,
+        quote=quote,
+        free_base=float(free.get(base, 0) or 0),
+        free_quote=float(free.get(quote, 0) or 0),
+        total_base=float(total.get(base, 0) or 0),
+        total_quote=float(total.get(quote, 0) or 0),
     )

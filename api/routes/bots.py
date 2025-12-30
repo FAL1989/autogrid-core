@@ -88,6 +88,7 @@ class BotResponse(BaseModel):
     """Bot response."""
 
     id: UUID
+    credential_id: UUID | None
     name: str
     strategy: str
     exchange: str
@@ -177,6 +178,7 @@ async def create_bot(
 
     return BotResponse(
         id=new_bot.id,
+        credential_id=new_bot.credential_id,
         name=new_bot.name,
         strategy=new_bot.strategy,
         exchange=new_bot.exchange,
@@ -209,6 +211,7 @@ async def list_bots(
     bot_responses = [
         BotResponse(
             id=bot.id,
+            credential_id=bot.credential_id,
             name=bot.name,
             strategy=bot.strategy,
             exchange=bot.exchange,
@@ -251,6 +254,7 @@ async def get_bot(
 
     return BotResponse(
         id=bot.id,
+        credential_id=bot.credential_id,
         name=bot.name,
         strategy=bot.strategy,
         exchange=bot.exchange,
@@ -317,6 +321,7 @@ async def update_bot(
 
     return BotResponse(
         id=updated.id,
+        credential_id=updated.credential_id,
         name=updated.name,
         strategy=updated.strategy,
         exchange=updated.exchange,

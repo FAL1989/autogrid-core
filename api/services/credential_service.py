@@ -226,3 +226,77 @@ class CredentialService:
             await connector.disconnect()
 
         return markets
+
+    async def fetch_ticker(
+        self,
+        credential_id: UUID,
+        user_id: UUID,
+        symbol: str,
+    ) -> dict:
+        """
+        Fetch current ticker for a symbol using the credential's exchange.
+
+        Args:
+            credential_id: The credential's UUID.
+            user_id: The owner's UUID.
+            symbol: Trading pair symbol (e.g. BTC/USDT).
+
+        Returns:
+            CCXT ticker dict.
+        """
+        credential = await self.get_by_id_for_user(credential_id, user_id)
+        if credential is None:
+            raise ValueError("Credential not found")
+
+        api_key, api_secret = self.get_decrypted_keys(credential)
+
+        connector = CCXTConnector(
+            exchange_id=credential.exchange,
+            api_key=api_key,
+            api_secret=api_secret,
+            testnet=credential.is_testnet,
+        )
+
+        await connector.connect()
+        try:
+            ticker = await connector.fetch_ticker(symbol)
+        finally:
+            await connector.disconnect()
+
+        return ticker
+
+    async def fetch_balance(
+        self,
+        credential_id: UUID,
+        user_id: UUID,
+    ) -> dict:
+        """
+        Fetch account balance using the credential's exchange.
+
+        Args:
+            credential_id: The credential's UUID.
+            user_id: The owner's UUID.
+
+        Returns:
+            CCXT balance dict.
+        """
+        credential = await self.get_by_id_for_user(credential_id, user_id)
+        if credential is None:
+            raise ValueError("Credential not found")
+
+        api_key, api_secret = self.get_decrypted_keys(credential)
+
+        connector = CCXTConnector(
+            exchange_id=credential.exchange,
+            api_key=api_key,
+            api_secret=api_secret,
+            testnet=credential.is_testnet,
+        )
+
+        await connector.connect()
+        try:
+            balance = await connector.fetch_balance()
+        finally:
+            await connector.disconnect()
+
+        return balance
