@@ -57,13 +57,14 @@ services:
     build:
       context: .
       dockerfile: bot/Dockerfile
-    command: celery -A bot.tasks worker -l info
+    command: celery -A bot.tasks worker -l info --concurrency=1 --pool=solo
     env_file:
       - .env
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/autogrid
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - PYTHONPATH=/app
     depends_on:
       - redis
       - postgres
@@ -85,6 +86,7 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/autogrid
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - PYTHONPATH=/app
     depends_on:
       - redis
       - celery

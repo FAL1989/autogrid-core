@@ -55,6 +55,10 @@ celery_app.conf.beat_schedule = {
         "task": "bot.tasks.check_circuit_breakers",
         "schedule": 10.0,  # Every 10 seconds
     },
+    "tick-running-bots-every-5s": {
+        "task": "bot.tasks.tick_running_bots",
+        "schedule": 5.0,  # Every 5 seconds
+    },
     "sync-bot-metrics-every-30s": {
         "task": "bot.tasks.sync_running_bots_metrics",
         "schedule": 30.0,  # Every 30 seconds
@@ -149,19 +153,22 @@ async def _start_bot_async(bot_id: str) -> dict:
 
     from api.core.config import get_settings
     from api.models.orm import Bot, ExchangeCredential
-    from api.services.security import decrypt_api_key
+    from api.services.encryption import get_encryption_service
     from bot.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+    from bot.engine import BotConfig, BotEngine
     from bot.exchange.connector import CCXTConnector
-    from bot.exchange.websocket_manager import WebSocketManager
     from bot.order_manager import OrderManager
+    from bot.strategies.dca import DCAStrategy
+    from bot.strategies.grid import GridStrategy
 
     settings = get_settings()
 
     # Create database session
-    engine = create_async_engine(settings.async_database_url)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    db_engine = create_async_engine(settings.async_database_url)
+    async_session = sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    db = async_session()
 
-    async with async_session() as db:
+    try:
         # Load bot from database
         stmt = select(Bot).where(Bot.id == UUID(bot_id))
         result = await db.execute(stmt)
@@ -184,11 +191,87 @@ async def _start_bot_async(bot_id: str) -> dict:
             if not credential:
                 return {"status": "error", "message": "Credentials not found"}
 
-            api_key = decrypt_api_key(credential.api_key_encrypted)
-            api_secret = decrypt_api_key(credential.api_secret_encrypted)
+            encryption = get_encryption_service()
+            api_key = encryption.decrypt(credential.api_key_encrypted)
+            api_secret = encryption.decrypt(credential.api_secret_encrypted)
             is_testnet = credential.is_testnet
         else:
             return {"status": "error", "message": "No credentials configured"}
+
+        config = dict(bot.config or {})
+
+        # Strategy initialization
+        strategy_instance = None
+        investment_value = Decimal(str(config.get("investment", 0) or 0))
+        normalized_config = dict(config)
+
+        if bot.strategy == "grid":
+            lower_price = Decimal(str(config["lower_price"]))
+            upper_price = Decimal(str(config["upper_price"]))
+            grid_count = int(config["grid_count"])
+            investment_value = Decimal(str(config.get("investment", 0) or 0))
+            strategy_instance = GridStrategy(
+                symbol=bot.symbol,
+                investment=investment_value,
+                lower_price=lower_price,
+                upper_price=upper_price,
+                grid_count=grid_count,
+            )
+        elif bot.strategy == "dca":
+            amount_per_buy = config.get("amount_per_buy", config.get("amount"))
+            if amount_per_buy is None:
+                return {"status": "error", "message": "DCA config missing amount"}
+
+            amount_per_buy_value = Decimal(str(amount_per_buy))
+            trigger_drop = config.get(
+                "trigger_drop_percent",
+                config.get("trigger_drop"),
+            )
+            take_profit = config.get(
+                "take_profit_percent",
+                config.get("take_profit"),
+            )
+            interval = config.get("interval")
+            investment_value = Decimal(
+                str(config.get("investment", amount_per_buy_value) or amount_per_buy_value)
+            )
+
+            normalized_config.setdefault("amount_per_buy", float(amount_per_buy_value))
+            normalized_config.setdefault("investment", float(investment_value))
+            if trigger_drop is not None:
+                normalized_config.setdefault("trigger_drop_percent", float(trigger_drop))
+            if take_profit is not None:
+                normalized_config.setdefault("take_profit_percent", float(take_profit))
+
+            if bot.strategy_state:
+                strategy_instance = DCAStrategy.from_state_dict(
+                    bot.strategy_state,
+                    symbol=bot.symbol,
+                    investment=investment_value,
+                    amount_per_buy=amount_per_buy_value,
+                    interval=interval,
+                    trigger_drop_percent=Decimal(str(trigger_drop))
+                    if trigger_drop is not None
+                    else None,
+                    take_profit_percent=Decimal(str(take_profit))
+                    if take_profit is not None
+                    else None,
+                )
+            else:
+                strategy_instance = DCAStrategy(
+                    symbol=bot.symbol,
+                    investment=investment_value,
+                    amount_per_buy=amount_per_buy_value,
+                    interval=interval,
+                    trigger_drop_percent=Decimal(str(trigger_drop))
+                    if trigger_drop is not None
+                    else None,
+                    take_profit_percent=Decimal(str(take_profit))
+                    if take_profit is not None
+                    else None,
+                )
+        else:
+            return {"status": "error", "message": f"Unknown strategy {bot.strategy}"}
 
         # Create exchange connector
         connector = CCXTConnector(
@@ -225,36 +308,43 @@ async def _start_bot_async(bot_id: str) -> dict:
             db_session=db,
         )
 
-        # Create WebSocket manager (if supported)
-        ws_manager = None
-        if bot.exchange in ("binance", "bybit"):
-            ws_manager = WebSocketManager()
-            await ws_manager.connect(
-                exchange_id=bot.exchange,
-                api_key=api_key,
-                api_secret=api_secret,
-                testnet=is_testnet,
-            )
-
-            # Register order update callback
-            async def on_order_update(data: dict):
-                await order_manager.handle_websocket_update(data)
-
-            ws_manager.on_order_update(on_order_update)
-
         # Load existing orders
         await order_manager.load_orders_from_db(UUID(bot_id))
+
+        engine = BotEngine(
+            config=BotConfig(
+                id=UUID(bot_id),
+                user_id=bot.user_id,
+                strategy=strategy_instance,
+                exchange=connector,
+                symbol=bot.symbol,
+                investment=investment_value,
+            ),
+            order_manager=order_manager,
+            circuit_breaker=circuit_breaker,
+        )
+
+        order_manager.on_order_filled = engine.handle_order_filled
 
         # Register bot in running registry
         _running_bots[bot_id] = {
             "connector": connector,
             "order_manager": order_manager,
             "circuit_breaker": circuit_breaker,
-            "ws_manager": ws_manager,
-            "config": bot.config,
+            "ws_manager": None,
+            "config": normalized_config,
             "symbol": bot.symbol,
             "strategy": bot.strategy,
+            "engine": engine,
+            "strategy_instance": strategy_instance,
+            "db_session": db,
+            "db_engine": db_engine,
+            "tick_in_progress": False,
         }
+
+        # Seed initial orders for grid bots
+        if bot.strategy == "grid":
+            await engine._tick()
 
         # Update bot status
         bot.status = "running"
@@ -267,11 +357,15 @@ async def _start_bot_async(bot_id: str) -> dict:
             user_id=str(bot.user_id),
             bot_id=bot_id,
             status="running",
-            message="Bot started successfully"
+            message="Bot started successfully",
         )
 
         logger.info(f"Bot {bot_id} started successfully")
         return {"status": "running", "bot_id": bot_id}
+    except Exception:
+        await db.close()
+        await db_engine.dispose()
+        raise
 
 
 @celery_app.task(bind=True)
@@ -319,6 +413,8 @@ async def _stop_bot_async(bot_id: str) -> dict:
         order_manager = bot_data.get("order_manager")
         connector = bot_data.get("connector")
         ws_manager = bot_data.get("ws_manager")
+        db_session = bot_data.get("db_session")
+        db_engine = bot_data.get("db_engine")
 
         # Cancel all open orders
         if order_manager:
@@ -332,6 +428,11 @@ async def _stop_bot_async(bot_id: str) -> dict:
         # Disconnect exchange
         if connector:
             await connector.disconnect()
+
+        if db_session:
+            await db_session.close()
+        if db_engine:
+            await db_engine.dispose()
 
         # Remove from registry
         del _running_bots[bot_id]
@@ -366,6 +467,60 @@ async def _stop_bot_async(bot_id: str) -> dict:
         "bot_id": bot_id,
         "orders_cancelled": orders_cancelled,
     }
+
+
+@celery_app.task(bind=True)
+def tick_running_bots(self) -> dict:
+    """
+    Execute strategy ticks for running bots.
+
+    Grid bots are ticked regularly to place and manage orders.
+    """
+    ticked = 0
+    skipped = 0
+    errors = 0
+
+    for bot_id, bot_data in list(_running_bots.items()):
+        if bot_data.get("strategy") != "grid":
+            continue
+
+        if bot_data.get("tick_in_progress"):
+            skipped += 1
+            continue
+
+        bot_data["tick_in_progress"] = True
+        try:
+            _run_async(_tick_bot_async(bot_id, bot_data))
+            ticked += 1
+        except Exception as e:
+            errors += 1
+            logger.error(f"Tick failed for bot {bot_id}: {e}")
+            _run_async(_update_bot_status(bot_id, "error", str(e)))
+            stop_trading_bot.delay(bot_id)
+        finally:
+            bot_data["tick_in_progress"] = False
+
+    return {"status": "ok", "ticked": ticked, "skipped": skipped, "errors": errors}
+
+
+async def _tick_bot_async(bot_id: str, bot_data: dict[str, Any]) -> None:
+    """Run a single strategy tick for a bot."""
+    order_manager = bot_data.get("order_manager")
+    engine = bot_data.get("engine")
+
+    if not order_manager or not engine:
+        raise RuntimeError("Missing engine or order manager")
+
+    # Sync open orders before strategy calculation
+    open_orders = await order_manager.get_open_orders(UUID(bot_id))
+    for order in open_orders:
+        await order_manager.sync_order_status(order.id)
+
+    await engine._tick()
+
+    if engine.strategy.should_stop():
+        logger.info(f"Bot {bot_id} requested stop by strategy")
+        stop_trading_bot.delay(bot_id)
 
 
 # =============================================================================

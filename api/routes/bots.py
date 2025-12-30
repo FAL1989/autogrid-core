@@ -51,6 +51,12 @@ class DCAConfig(BaseModel):
     trigger_drop: float | None = Field(
         None, ge=0, le=100, description="Price drop % to trigger extra buy"
     )
+    take_profit: float | None = Field(
+        None, ge=0, le=1000, description="Take profit %"
+    )
+    investment: float | None = Field(
+        None, gt=0, description="Total investment amount"
+    )
 
 
 class BotCreate(BaseModel):
@@ -61,6 +67,20 @@ class BotCreate(BaseModel):
     strategy: Literal["grid", "dca"]
     symbol: str = Field(..., pattern=r"^[A-Z]+/[A-Z]+$", examples=["BTC/USDT"])
     config: GridConfig | DCAConfig
+
+
+class BotUpdate(BaseModel):
+    """Bot update request."""
+
+    name: str | None = Field(None, min_length=1, max_length=100)
+    config: dict | None = None
+
+    @model_validator(mode="after")
+    def validate_update(self) -> "BotUpdate":
+        """Ensure at least one field is provided."""
+        if self.name is None and self.config is None:
+            raise ValueError("At least one field (name or config) must be provided")
+        return self
 
 
 class BotResponse(BaseModel):
@@ -240,6 +260,72 @@ async def get_bot(
         config=bot.config,
         created_at=bot.created_at,
         updated_at=bot.updated_at,
+    )
+
+
+@router.patch("/{bot_id}", response_model=BotResponse)
+async def update_bot(
+    bot_id: UUID,
+    update: BotUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> BotResponse:
+    """
+    Update bot name and/or configuration.
+    """
+    bot_service = BotService(db)
+
+    bot = await bot_service.get_by_id_for_user(bot_id, current_user.id)
+    if bot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bot not found",
+        )
+
+    if bot.status in {"running", "starting", "stopping"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Stop the bot before editing",
+        )
+
+    config_payload = None
+    if update.config is not None:
+        if bot.strategy == "grid":
+            config_payload = GridConfig.model_validate(update.config).model_dump()
+        elif bot.strategy == "dca":
+            config_payload = DCAConfig.model_validate(update.config).model_dump()
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unsupported strategy {bot.strategy}",
+            )
+
+    updated = await bot_service.update_bot(
+        bot_id=bot_id,
+        user_id=current_user.id,
+        name=update.name,
+        config=config_payload,
+    )
+    if updated is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bot not found",
+        )
+
+    await db.commit()
+
+    return BotResponse(
+        id=updated.id,
+        name=updated.name,
+        strategy=updated.strategy,
+        exchange=updated.exchange,
+        symbol=updated.symbol,
+        status=updated.status,
+        realized_pnl=float(updated.realized_pnl),
+        unrealized_pnl=float(updated.unrealized_pnl),
+        config=updated.config,
+        created_at=updated.created_at,
+        updated_at=updated.updated_at,
     )
 
 

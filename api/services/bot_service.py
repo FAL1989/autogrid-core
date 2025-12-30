@@ -232,6 +232,44 @@ class BotService:
         await self.db.flush()
         return True
 
+    async def update_bot(
+        self,
+        bot_id: UUID,
+        user_id: UUID,
+        name: str | None = None,
+        config: dict | None = None,
+    ) -> Bot | None:
+        """
+        Update bot name and/or configuration.
+
+        Args:
+            bot_id: The bot's UUID.
+            user_id: The owner's UUID.
+            name: Optional new bot name.
+            config: Optional new strategy configuration.
+
+        Returns:
+            Updated Bot or None if not found.
+        """
+        bot = await self.get_by_id_for_user(bot_id, user_id)
+
+        if bot is None:
+            return None
+
+        if name is not None:
+            bot.name = name
+
+        if config is not None:
+            bot.config = config
+            bot.strategy_state = {}
+            if bot.status == "error":
+                bot.status = "stopped"
+                bot.error_message = None
+
+        await self.db.flush()
+        await self.db.refresh(bot)
+        return bot
+
     async def update_strategy_state(
         self,
         bot_id: UUID,

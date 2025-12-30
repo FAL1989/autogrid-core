@@ -633,7 +633,10 @@ class OrderManager:
                     logger.warning(f"Failed to queue Telegram fill notification: {e}")
 
                 if self.on_order_filled:
-                    self.on_order_filled(order)
+                    if asyncio.iscoroutinefunction(self.on_order_filled):
+                        await self.on_order_filled(order)
+                    else:
+                        self.on_order_filled(order)
 
         elif status == "cancelled":
             if order.can_transition_to(OrderState.CANCELLED):
