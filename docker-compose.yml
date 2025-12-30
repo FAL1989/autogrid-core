@@ -8,6 +8,8 @@ services:
       dockerfile: api/Dockerfile
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/autogrid
       - REDIS_URL=redis://redis:6379
@@ -32,6 +34,8 @@ services:
     build:
       context: .
       dockerfile: bot/Dockerfile
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/autogrid
       - REDIS_URL=redis://redis:6379
@@ -54,6 +58,8 @@ services:
       context: .
       dockerfile: bot/Dockerfile
     command: celery -A bot.tasks worker -l info
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/autogrid
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -63,6 +69,7 @@ services:
       - postgres
     volumes:
       - ./bot:/app/bot
+      - ./api:/app/api
 
   # ===========================================
   # Celery Beat (Scheduler)
@@ -72,6 +79,8 @@ services:
       context: .
       dockerfile: bot/Dockerfile
     command: celery -A bot.tasks beat -l info
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/autogrid
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -81,6 +90,7 @@ services:
       - celery
     volumes:
       - ./bot:/app/bot
+      - ./api:/app/api
 
   # ===========================================
   # Web Dashboard (Next.js)

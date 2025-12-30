@@ -16,7 +16,8 @@ from sqlalchemy import text
 from api.core.config import get_settings
 from api.core.database import close_db, engine
 from api.core.rate_limiter import close_redis, init_redis
-from api.routes import auth, backtest, bots, credentials, orders, reports, ws
+from api.routes import auth, backtest, bots, credentials, orders, reports, telegram, ws
+from api.services.telegram_service import set_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.warning(f"Redis connection failed: {e}. Rate limiting will be disabled.")
 
     logger.info(f"API running in {'debug' if settings.api_debug else 'production'} mode")
+
+    # Configure Telegram webhook if enabled
+    if settings.telegram_bot_token and settings.telegram_webhook_url:
+        await set_webhook(settings.telegram_webhook_url)
 
     yield
 
@@ -92,6 +97,7 @@ app.include_router(backtest.router, prefix="/api/v1/backtest", tags=["Backtestin
 app.include_router(credentials.router, prefix="/api/v1/credentials", tags=["Credentials"])
 app.include_router(orders.router, prefix="/api/v1/orders", tags=["Orders"])
 app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
+app.include_router(telegram.router, prefix="/api/v1/telegram", tags=["Telegram"])
 app.include_router(ws.router, tags=["WebSocket"])
 
 

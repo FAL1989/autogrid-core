@@ -131,6 +131,16 @@ class BotEngine:
 
         except Exception as e:
             logger.error(f"Bot {self.config.id} error: {e}")
+            try:
+                from api.services.telegram_service import notify_error
+                asyncio.create_task(
+                    notify_error(
+                        self.config.user_id,
+                        f"Bot {self.config.id} error: {e}",
+                    )
+                )
+            except Exception as exc:
+                logger.warning(f"Failed to queue Telegram error notification: {exc}")
             raise
         finally:
             await self.stop()

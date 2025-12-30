@@ -1190,4 +1190,11 @@ async def _update_bot_status(bot_id: str, status: str, error_message: str | None
             bot.error_message = error_message
             await db.commit()
 
+            if status == "error" and error_message:
+                try:
+                    from api.services.telegram_service import notify_error
+                    await notify_error(bot.user_id, error_message)
+                except Exception as exc:
+                    logger.warning(f"Failed to send Telegram error: {exc}")
+
     await engine.dispose()

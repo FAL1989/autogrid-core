@@ -618,6 +618,19 @@ class OrderManager:
                         "average_fill_price": float(order.average_fill_price or 0)
                     }
                 )
+                try:
+                    from api.services.telegram_service import notify_order_filled
+                    asyncio.create_task(
+                        notify_order_filled(
+                            user_id,
+                            order.symbol,
+                            order.side,
+                            order.filled_quantity,
+                            order.average_fill_price or order.price or Decimal("0"),
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to queue Telegram fill notification: {e}")
 
                 if self.on_order_filled:
                     self.on_order_filled(order)

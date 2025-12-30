@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # Telegram
+    telegram_bot_token: str | None = None
+    telegram_bot_username: str | None = None
+    telegram_webhook_url: str | None = None
+    telegram_webhook_secret: str | None = None
+    telegram_link_token_exp_minutes: int = 30
+
     @property
     def async_database_url(self) -> str:
         """Convert database URL to async format for asyncpg."""

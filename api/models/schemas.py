@@ -93,7 +93,7 @@ class UserResponse(UserBase, TimestampMixin):
 
     id: UUID
     plan: UserPlan = UserPlan.FREE
-    telegram_chat_id: int | None = None
+    telegram_chat_id: str | None = None
 
     class Config:
         from_attributes = True

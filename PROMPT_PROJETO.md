@@ -380,10 +380,10 @@ make docker-up
 ### Sprint 5 - Telegram & Notificações
 
 #### 13. Implementar Bot Telegram
-- [ ] Comandos básicos (/status, /balance)
-- [ ] Notificações de fills
-- [ ] Alertas de erro
-- [ ] Confirmação para stop
+- [x] ✅ Comandos básicos (/status, /balance) (`api/routes/telegram.py`)
+- [x] ✅ Notificações de fills (`bot/order_manager.py`, `api/services/telegram_service.py`)
+- [x] ✅ Alertas de erro (`bot/engine.py`, `bot/tasks.py`, `api/services/telegram_service.py`)
+- [x] ✅ Confirmação para stop (`api/routes/telegram.py`)
 
 ### Sprint 6 - Produção
 
@@ -492,7 +492,9 @@ BINANCE_TESTNET=true
 
 # Telegram (opcional)
 TELEGRAM_BOT_TOKEN=
-TELEGRAM_CHAT_ID=
+TELEGRAM_WEBHOOK_URL=
+TELEGRAM_WEBHOOK_SECRET=
+TELEGRAM_BOT_USERNAME=
 ```
 
 ---
@@ -507,5 +509,5 @@ TELEGRAM_CHAT_ID=
 ---
 
 *Prompt gerado em: Dezembro 2025*
-*Última atualização: 28/12/2025 - Sprint 2 Item 7 completo (DCA Scheduler, price drop, take profit, state persistence)*
+*Última atualização: 29/12/2025 - Sprint 5 Item 13 completo (Telegram bot, comandos e notificações)*
 *Versão: 1.6.0*
