@@ -36,6 +36,8 @@ celery_app.conf.update(
     task_soft_time_limit=3500,  # Soft limit to allow graceful shutdown
     worker_prefetch_multiplier=1,
     task_acks_late=True,
+    worker_concurrency=1,
+    worker_pool="solo",
 )
 
 # Beat schedule for periodic tasks
@@ -149,10 +151,14 @@ def start_trading_bot(self, bot_id: str) -> dict:
         raise self.retry(exc=e, countdown=10)
 
 
-async def _start_bot_async(bot_id: str) -> dict:
+async def _start_bot_async(
+    bot_id: str,
+    rehydrate: bool = False,
+    broadcast: bool = True,
+) -> dict:
     """Async implementation of bot startup."""
     import redis.asyncio as redis_async
-    from sqlalchemy import func, select
+    from sqlalchemy import func, select, update
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -182,7 +188,7 @@ async def _start_bot_async(bot_id: str) -> dict:
         if not bot:
             return {"status": "error", "message": f"Bot {bot_id} not found"}
 
-        if bot.status == "running":
+        if bot.status == "running" and not rehydrate:
             return {"status": "already_running", "bot_id": bot_id}
 
         # Load credentials
@@ -356,14 +362,15 @@ async def _start_bot_async(bot_id: str) -> dict:
         bot.error_message = None
         await db.commit()
 
-        # Broadcast bot status update via WebSocket
-        from api.core.ws_manager import broadcast_bot_status
-        await broadcast_bot_status(
-            user_id=str(bot.user_id),
-            bot_id=bot_id,
-            status="running",
-            message="Bot started successfully",
-        )
+        if broadcast:
+            # Broadcast bot status update via WebSocket
+            from api.core.ws_manager import broadcast_bot_status
+            await broadcast_bot_status(
+                user_id=str(bot.user_id),
+                bot_id=bot_id,
+                status="running",
+                message="Bot started successfully",
+            )
 
         logger.info(f"Bot {bot_id} started successfully")
         return {"status": "running", "bot_id": bot_id}
@@ -508,6 +515,12 @@ def tick_running_bots(self) -> dict:
     skipped = 0
     errors = 0
 
+    if not _running_bots:
+        try:
+            _run_async(_rehydrate_running_bots())
+        except Exception as e:
+            logger.error(f"Failed to rehydrate running bots: {e}")
+
     for bot_id, bot_data in list(_running_bots.items()):
         if bot_data.get("strategy") != "grid":
             continue
@@ -535,6 +548,40 @@ def tick_running_bots(self) -> dict:
     return {"status": "ok", "ticked": ticked, "skipped": skipped, "errors": errors}
 
 
+async def _rehydrate_running_bots() -> dict:
+    """Rebuild in-memory running bots state from the database."""
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from api.core.config import get_settings
+    from api.models.orm import Bot
+
+    settings = get_settings()
+    db_engine = create_async_engine(settings.async_database_url)
+    async_session = sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    db = async_session()
+
+    try:
+        result = await db.execute(select(Bot.id).where(Bot.status == "running"))
+        bot_ids = [str(row[0]) for row in result.all()]
+    finally:
+        await db.close()
+        await db_engine.dispose()
+
+    rehydrated = 0
+    for bot_id in bot_ids:
+        if bot_id in _running_bots:
+            continue
+        result = await _start_bot_async(bot_id, rehydrate=True, broadcast=False)
+        if result.get("status") in ("running", "already_running"):
+            rehydrated += 1
+
+    if rehydrated:
+        logger.info(f"Rehydrated {rehydrated} running bots from DB")
+
+    return {"status": "ok", "rehydrated": rehydrated}
+
 async def _tick_bot_async(bot_id: str, bot_data: dict[str, Any]) -> None:
     """Run a single strategy tick for a bot."""
     order_manager = bot_data.get("order_manager")
@@ -542,6 +589,9 @@ async def _tick_bot_async(bot_id: str, bot_data: dict[str, Any]) -> None:
 
     if not order_manager or not engine:
         raise RuntimeError("Missing engine or order manager")
+
+    # Refresh config without stopping the bot
+    await _refresh_running_bot_config(bot_id, bot_data)
 
     # Sync open orders before strategy calculation
     open_orders = await order_manager.get_open_orders(UUID(bot_id))
@@ -557,6 +607,88 @@ async def _tick_bot_async(bot_id: str, bot_data: dict[str, Any]) -> None:
             source="strategy",
             reason="strategy_stop",
         )
+
+
+def _grid_config_signature(config: dict[str, Any]) -> tuple[Decimal, Decimal, int, Decimal] | None:
+    """Build a comparable signature for grid config."""
+    try:
+        lower_price = Decimal(str(config["lower_price"]))
+        upper_price = Decimal(str(config["upper_price"]))
+        grid_count = int(config["grid_count"])
+        investment_value = Decimal(str(config.get("investment", 0) or 0))
+    except (KeyError, ValueError, TypeError):
+        return None
+
+    return (lower_price, upper_price, grid_count, investment_value)
+
+
+async def _refresh_running_bot_config(bot_id: str, bot_data: dict[str, Any]) -> None:
+    """Reload bot config from DB if it changed."""
+    if bot_data.get("strategy") != "grid":
+        return
+
+    engine = bot_data.get("engine")
+    if not engine:
+        return
+
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from api.core.config import get_settings
+    from api.models.orm import Bot
+    from bot.strategies.grid import GridStrategy
+
+    settings = get_settings()
+    db_engine = create_async_engine(settings.async_database_url)
+    async_session = sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+
+    try:
+        async with async_session() as db:
+            result = await db.execute(select(Bot).where(Bot.id == UUID(bot_id)))
+            bot = result.scalar_one_or_none()
+    finally:
+        await db_engine.dispose()
+
+    if not bot:
+        return
+
+    config = dict(bot.config or {})
+    new_signature = _grid_config_signature(config)
+    current_signature = _grid_config_signature(bot_data.get("config", {}))
+
+    if not new_signature or new_signature == current_signature:
+        return
+
+    lower_price, upper_price, grid_count, investment_value = new_signature
+
+    logger.info(
+        "Reloading bot config in-memory: %s (lower=%s upper=%s grids=%s invest=%s)",
+        bot_id,
+        lower_price,
+        upper_price,
+        grid_count,
+        investment_value,
+    )
+
+    new_strategy = GridStrategy(
+        symbol=bot.symbol,
+        investment=investment_value,
+        lower_price=lower_price,
+        upper_price=upper_price,
+        grid_count=grid_count,
+    )
+
+    # Preserve realized P&L for continuity
+    if hasattr(engine, "strategy"):
+        new_strategy.realized_pnl = engine.strategy.realized_pnl
+
+    engine.strategy = new_strategy
+    engine.config.strategy = new_strategy
+    engine.config.investment = investment_value
+
+    bot_data["strategy_instance"] = new_strategy
+    bot_data["config"] = config
 
 
 # =============================================================================

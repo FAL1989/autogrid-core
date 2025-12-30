@@ -8,6 +8,7 @@ Provides unified interface for all supported exchanges.
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
@@ -97,6 +98,16 @@ class ExchangeConnector(ABC):
 
         Returns:
             Dict with currency balances
+        """
+        pass
+
+    @abstractmethod
+    async def get_min_notional(self, symbol: str) -> Decimal | None:
+        """
+        Get minimum notional value for a symbol, if available.
+
+        Returns:
+            Minimum order notional in quote currency, or None if unavailable.
         """
         pass
 
@@ -250,6 +261,31 @@ class CCXTConnector(ExchangeConnector):
     async def fetch_balance(self) -> dict[str, Any]:
         """Fetch balance via CCXT."""
         return await self._exchange.fetch_balance()
+
+    async def get_min_notional(self, symbol: str) -> Decimal | None:
+        """Get min notional from CCXT market metadata."""
+        if not self._exchange:
+            return None
+
+        market = self._exchange.market(symbol) if self._exchange else None
+        if not market:
+            return None
+
+        limits = market.get("limits", {})
+        cost_limits = limits.get("cost") or {}
+        min_cost = cost_limits.get("min")
+
+        if min_cost is None:
+            min_cost = market.get("minNotional") or market.get("min_notional")
+
+        if min_cost is None:
+            info = market.get("info") or {}
+            min_cost = info.get("minNotional") or info.get("min_notional")
+
+        if min_cost is None:
+            return None
+
+        return Decimal(str(min_cost))
 
     async def create_order(
         self,

@@ -197,9 +197,15 @@ class BotEngine:
             open_orders=open_orders,
         )
 
+        balance = None
+        try:
+            balance = await self.exchange.fetch_balance()
+        except Exception as e:
+            logger.warning(f"Failed to fetch balance for checks: {e}")
+
         # Execute orders with risk management and circuit breaker
         for order in new_orders:
-            await self._execute_order_with_checks(order, current_price)
+            await self._execute_order_with_checks(order, current_price, balance)
 
     async def _get_open_orders(self) -> list[Order]:
         """Get currently open orders."""
@@ -225,6 +231,7 @@ class BotEngine:
         self,
         order: Order,
         current_price: Decimal,
+        balance: dict | None,
     ) -> None:
         """Execute order with circuit breaker and risk checks."""
         # Check circuit breaker
@@ -239,6 +246,14 @@ class BotEngine:
                 logger.warning(f"Order blocked by circuit breaker: {reason}")
                 return
 
+        # Check exchange minimum notional
+        if not await self._check_min_notional(order, current_price):
+            return
+
+        # Check available balance
+        if not self._check_available_balance(order, current_price, balance):
+            return
+
         # Check risk manager
         if not self._check_order(order, current_price):
             return
@@ -249,6 +264,81 @@ class BotEngine:
         # Record order placement in circuit breaker
         if self.circuit_breaker:
             await self.circuit_breaker.record_order_placed(self.config.id)
+
+    async def _check_min_notional(
+        self,
+        order: Order,
+        current_price: Decimal,
+    ) -> bool:
+        """Validate order against exchange minimum notional."""
+        if not self.exchange or not hasattr(self.exchange, "get_min_notional"):
+            return True
+
+        min_notional = await self.exchange.get_min_notional(self.config.symbol)
+        if not min_notional:
+            return True
+
+        price = order.price or current_price
+        if not price or price <= 0:
+            return True
+
+        notional = price * order.quantity
+        if notional < min_notional:
+            logger.warning(
+                "Order blocked by min_notional: %s < %s (%s %s @ %s)",
+                notional,
+                min_notional,
+                order.side,
+                order.quantity,
+                price,
+            )
+            return False
+
+        return True
+
+    def _check_available_balance(
+        self,
+        order: Order,
+        current_price: Decimal,
+        balance: dict | None,
+    ) -> bool:
+        """Validate order against available balance."""
+        if not balance:
+            return True
+
+        symbol_parts = self.config.symbol.split("/")
+        if len(symbol_parts) != 2:
+            return True
+
+        base_asset, quote_asset = symbol_parts[0], symbol_parts[1]
+        free_balances = balance.get("free") or {}
+
+        if order.side == "buy":
+            price = order.price or current_price
+            notional = (price or Decimal("0")) * order.quantity
+            free_quote = Decimal(str(free_balances.get(quote_asset, 0) or 0))
+            if free_quote < notional:
+                logger.warning(
+                    "Order blocked by balance: need %s %s, free %s %s",
+                    notional,
+                    quote_asset,
+                    free_quote,
+                    quote_asset,
+                )
+                return False
+        else:
+            free_base = Decimal(str(free_balances.get(base_asset, 0) or 0))
+            if free_base < order.quantity:
+                logger.warning(
+                    "Order blocked by balance: need %s %s, free %s %s",
+                    order.quantity,
+                    base_asset,
+                    free_base,
+                    base_asset,
+                )
+                return False
+
+        return True
 
     def _check_order(self, order: Order, current_price: Decimal) -> bool:
         """Validate order against risk rules."""

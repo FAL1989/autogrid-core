@@ -139,7 +139,7 @@ class CircuitBreaker:
         # Check order rate
         order_count = await self._get_order_count(bot_key)
         if order_count >= self.config.max_orders_per_minute:
-            await self.trip(bot_id, TripReason.ORDER_RATE_EXCEEDED)
+            # Soft throttle: block new orders without tripping the breaker.
             return False, f"order_rate_exceeded ({order_count}/{self.config.max_orders_per_minute}/min)"
 
         # Check loss limit
