@@ -160,17 +160,20 @@ class GridStrategy(BaseStrategy):
                     )
                     new_orders.append(order)
 
-            # SELL orders: above current price, has position, no open sell order
-            elif price > current_price:
-                if level.has_position() and i not in open_sell_levels:
-                    order = Order(
-                        side="sell",
-                        type="limit",
-                        price=price,
-                        quantity=level.position_qty,
-                        grid_level=i,
-                    )
-                    new_orders.append(order)
+            # SELL orders: place at next grid level up for levels with position
+            if level.has_position() and i not in open_sell_levels:
+                sell_index = i + 1
+                if sell_index >= len(self._grid_prices):
+                    continue
+                sell_price = self._grid_prices[sell_index]
+                order = Order(
+                    side="sell",
+                    type="limit",
+                    price=sell_price,
+                    quantity=level.position_qty,
+                    grid_level=i,
+                )
+                new_orders.append(order)
 
         return new_orders
 
@@ -240,9 +243,13 @@ class GridStrategy(BaseStrategy):
 
             profit = (fill_price - buy_price) * order.quantity
 
-            # Clear position at this level
-            level.position_qty = Decimal("0")
-            level.avg_buy_price = None
+            # Reduce position at this level (partial fills possible)
+            new_qty = level.position_qty - order.quantity
+            if new_qty <= Decimal("0"):
+                level.position_qty = Decimal("0")
+                level.avg_buy_price = None
+            else:
+                level.position_qty = new_qty
             level.sell_order_id = order.id
 
             # Accumulate realized P&L

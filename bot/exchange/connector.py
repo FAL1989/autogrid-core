@@ -112,6 +112,26 @@ class ExchangeConnector(ABC):
         pass
 
     @abstractmethod
+    async def get_min_qty(self, symbol: str) -> Decimal | None:
+        """
+        Get minimum quantity for a symbol, if available.
+
+        Returns:
+            Minimum order quantity in base currency, or None if unavailable.
+        """
+        pass
+
+    @abstractmethod
+    async def get_step_size(self, symbol: str) -> Decimal | None:
+        """
+        Get quantity step size for a symbol, if available.
+
+        Returns:
+            Order quantity increment, or None if unavailable.
+        """
+        pass
+
+    @abstractmethod
     async def create_order(
         self,
         symbol: str,
@@ -286,6 +306,55 @@ class CCXTConnector(ExchangeConnector):
             return None
 
         return Decimal(str(min_cost))
+
+    async def get_min_qty(self, symbol: str) -> Decimal | None:
+        """Get min quantity from CCXT market metadata."""
+        if not self._exchange:
+            return None
+
+        market = self._exchange.market(symbol) if self._exchange else None
+        if not market:
+            return None
+
+        limits = market.get("limits", {})
+        amount_limits = limits.get("amount") or {}
+        min_amount = amount_limits.get("min")
+
+        if min_amount is None:
+            info = market.get("info") or {}
+            min_amount = info.get("minQty") or info.get("min_qty")
+
+        if min_amount is None:
+            return None
+
+        return Decimal(str(min_amount))
+
+    async def get_step_size(self, symbol: str) -> Decimal | None:
+        """Get quantity step size from CCXT market metadata."""
+        if not self._exchange:
+            return None
+
+        market = self._exchange.market(symbol) if self._exchange else None
+        if not market:
+            return None
+
+        info = market.get("info") or {}
+        filters = info.get("filters") or []
+        for item in filters:
+            if item.get("filterType") == "LOT_SIZE":
+                step_size = item.get("stepSize") or item.get("step_size")
+                if step_size is not None:
+                    return Decimal(str(step_size))
+
+        step_size = info.get("stepSize") or info.get("step_size")
+        if step_size is not None:
+            return Decimal(str(step_size))
+
+        precision = market.get("precision", {}).get("amount")
+        if precision is None:
+            return None
+
+        return Decimal("1") / (Decimal("10") ** int(precision))
 
     async def create_order(
         self,

@@ -31,7 +31,7 @@ class GridConfig(BaseModel):
 
     lower_price: float = Field(..., gt=0, description="Lower price boundary")
     upper_price: float = Field(..., gt=0, description="Upper price boundary")
-    grid_count: int = Field(..., ge=5, le=100, description="Number of grid lines")
+    grid_count: int = Field(..., ge=2, le=100, description="Number of grid lines")
     investment: float = Field(..., gt=0, description="Total investment amount")
 
     @model_validator(mode="after")

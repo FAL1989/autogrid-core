@@ -120,6 +120,8 @@ class ManagedOrder:
     exchange_id: str | None = None
     filled_quantity: Decimal = Decimal("0")
     average_fill_price: Decimal | None = None
+    fee: Decimal = Decimal("0")
+    fee_asset: str | None = None
     retry_count: int = 0
     max_retries: int = 3
     last_error: str | None = None
@@ -380,6 +382,29 @@ class OrderManager:
             orders = [o for o in orders if o.bot_id == bot_id]
         return orders
 
+    def has_active_grid_order(
+        self,
+        bot_id: UUID,
+        side: str,
+        grid_level: int,
+    ) -> bool:
+        """Check for an active order on the same grid level."""
+        for order in self._orders.values():
+            if (
+                order.bot_id == bot_id
+                and order.side == side
+                and order.grid_level == grid_level
+                and order.state
+                in (
+                    OrderState.PENDING,
+                    OrderState.SUBMITTING,
+                    OrderState.OPEN,
+                    OrderState.PARTIALLY_FILLED,
+                )
+            ):
+                return True
+        return False
+
     async def get_orders_by_bot(
         self,
         bot_id: UUID,
@@ -542,6 +567,7 @@ class OrderManager:
                 db_order.filled_quantity = order.filled_quantity
                 db_order.average_fill_price = order.average_fill_price
                 db_order.filled_at = order.filled_at
+                db_order.grid_level = order.grid_level
             else:
                 # Create new
                 db_order = OrderORM(
@@ -557,6 +583,7 @@ class OrderManager:
                     average_fill_price=order.average_fill_price,
                     status=order.state.value,
                     filled_at=order.filled_at,
+                    grid_level=order.grid_level,
                 )
                 self.db_session.add(db_order)
 
@@ -565,6 +592,57 @@ class OrderManager:
         except Exception as e:
             logger.error(f"Failed to persist order {order.id}: {e}")
             await self.db_session.rollback()
+
+    def _extract_fee(self, data: dict[str, Any]) -> tuple[Decimal, str | None]:
+        """Extract fee amount and asset from exchange payloads."""
+        fee_asset = data.get("feeAsset", data.get("commissionAsset"))
+        fee_value: Any = data.get("fee", data.get("commission"))
+        if fee_value is None:
+            fee_value = data.get("fees")
+
+        if isinstance(fee_value, dict):
+            fee_asset = (
+                fee_value.get("currency")
+                or fee_value.get("asset")
+                or fee_asset
+            )
+            fee_value = fee_value.get(
+                "cost", fee_value.get("commission", fee_value.get("fee", 0))
+            )
+        elif isinstance(fee_value, list):
+            total = Decimal("0")
+            list_asset = None
+            for item in fee_value:
+                if isinstance(item, dict):
+                    cost = item.get(
+                        "cost", item.get("commission", item.get("fee", 0))
+                    )
+                    try:
+                        total += Decimal(str(cost))
+                    except Exception:
+                        pass
+                    item_asset = (
+                        item.get("currency")
+                        or item.get("asset")
+                        or item.get("commissionAsset")
+                    )
+                    if item_asset and list_asset is None:
+                        list_asset = item_asset
+                else:
+                    try:
+                        total += Decimal(str(item))
+                    except Exception:
+                        pass
+            fee_value = total
+            if list_asset:
+                fee_asset = list_asset
+
+        try:
+            fee_decimal = Decimal(str(fee_value or 0))
+        except Exception:
+            fee_decimal = Decimal("0")
+
+        return fee_decimal, str(fee_asset) if fee_asset else None
 
     async def _process_exchange_update(
         self,
@@ -584,6 +662,10 @@ class OrderManager:
         filled = Decimal(str(data.get("filled", data.get("z", 0))))
         average_price = data.get("average", data.get("ap", data.get("avgPrice")))
         status = data.get("status", data.get("X", "")).lower()
+        fee_value, fee_asset = self._extract_fee(data)
+        order.fee = fee_value
+        if fee_asset:
+            order.fee_asset = fee_asset
 
         # Normalize status
         if status in ("closed", "filled", "trade"):
@@ -632,12 +714,11 @@ class OrderManager:
                 except Exception as e:
                     logger.warning(f"Failed to queue Telegram fill notification: {e}")
 
-                realized_pnl = None
                 if self.on_order_filled:
                     if asyncio.iscoroutinefunction(self.on_order_filled):
-                        realized_pnl = await self.on_order_filled(order)
+                        await self.on_order_filled(order)
                     else:
-                        realized_pnl = self.on_order_filled(order)
+                        self.on_order_filled(order)
 
                 try:
                     from bot.tasks import process_order_fill
@@ -649,15 +730,13 @@ class OrderManager:
                             data.get("avgPrice", order.average_fill_price or 0)
                         ),
                         "status": "filled",
-                        "fee": data.get("fee", data.get("commission", 0)),
-                        "feeAsset": data.get(
-                            "feeAsset", data.get("commissionAsset")
-                        ),
-                        "tradeId": data.get("tradeId"),
+                        "fee": str(fee_value),
+                        "feeAsset": fee_asset,
+                        "tradeId": data.get("tradeId") or data.get("id"),
                         "timestamp": data.get("timestamp"),
-                        "realizedPnl": str(realized_pnl)
-                        if realized_pnl is not None
-                        else None,
+                        "realizedPnl": data.get("realizedPnl")
+                        or data.get("realized_pnl")
+                        or data.get("pnl"),
                     }
                     process_order_fill.delay(
                         str(order.bot_id),
@@ -711,6 +790,7 @@ class OrderManager:
             created_at=db_order.created_at,
             filled_at=db_order.filled_at,
             updated_at=db_order.updated_at,
+            grid_level=db_order.grid_level,
         )
 
     async def _cache_bot_user(self, bot_id: UUID) -> UUID:

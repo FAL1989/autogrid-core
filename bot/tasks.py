@@ -10,9 +10,10 @@ import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from celery import Celery
+from celery.signals import worker_ready
 from celery.schedules import crontab
 
 logger = logging.getLogger(__name__)
@@ -103,6 +104,7 @@ celery_app.conf.beat_schedule = {
 
 # Registry of running bots (in-memory per worker)
 _running_bots: dict[str, Any] = {}
+_rehydrate_attempted = False
 
 
 def _run_async(coro):
@@ -113,6 +115,28 @@ def _run_async(coro):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
     return loop.run_until_complete(coro)
+
+
+async def _maybe_rehydrate_running_bots() -> dict:
+    """Rehydrate running bots once per worker."""
+    global _rehydrate_attempted
+    if _rehydrate_attempted:
+        return {"status": "skipped", "rehydrated": 0}
+    _rehydrate_attempted = True
+    try:
+        return await _rehydrate_running_bots()
+    except Exception:
+        _rehydrate_attempted = False
+        raise
+
+
+@worker_ready.connect
+def _on_worker_ready(**_kwargs) -> None:
+    """Kick off rehydration when the worker is ready."""
+    try:
+        _run_async(_maybe_rehydrate_running_bots())
+    except Exception as exc:
+        logger.error(f"Failed to rehydrate bots on worker ready: {exc}")
 
 
 # =============================================================================
@@ -322,6 +346,9 @@ async def _start_bot_async(
         # Load existing orders
         await order_manager.load_orders_from_db(UUID(bot_id))
 
+        if bot.strategy == "grid" and rehydrate and strategy_instance:
+            await _restore_grid_strategy_state(bot_id, strategy_instance, db)
+
         engine = BotEngine(
             config=BotConfig(
                 id=UUID(bot_id),
@@ -354,7 +381,7 @@ async def _start_bot_async(
         }
 
         # Seed initial orders for grid bots
-        if bot.strategy == "grid":
+        if bot.strategy == "grid" and not rehydrate:
             await engine._tick()
 
         # Update bot status
@@ -517,7 +544,7 @@ def tick_running_bots(self) -> dict:
 
     if not _running_bots:
         try:
-            _run_async(_rehydrate_running_bots())
+            _run_async(_maybe_rehydrate_running_bots())
         except Exception as e:
             logger.error(f"Failed to rehydrate running bots: {e}")
 
@@ -581,6 +608,48 @@ async def _rehydrate_running_bots() -> dict:
         logger.info(f"Rehydrated {rehydrated} running bots from DB")
 
     return {"status": "ok", "rehydrated": rehydrated}
+
+
+async def _restore_grid_strategy_state(
+    bot_id: str,
+    strategy_instance,
+    db,
+) -> None:
+    """Restore grid strategy state from persisted trades."""
+    from sqlalchemy import select
+
+    from api.models.orm import Order as OrderORM, Trade
+    from bot.strategies.base import Order
+
+    result = await db.execute(
+        select(Trade, OrderORM.grid_level)
+        .join(OrderORM, Trade.order_id == OrderORM.id, isouter=True)
+        .where(Trade.bot_id == UUID(bot_id))
+        .order_by(Trade.timestamp.asc())
+    )
+    rows = result.all()
+    if not rows:
+        return
+
+    for trade, grid_level in rows:
+        if trade.price is None or trade.quantity is None:
+            continue
+        restored_order = Order(
+            id=trade.order_id or uuid4(),
+            side=trade.side,
+            type="limit",
+            price=trade.price,
+            quantity=trade.quantity,
+            status="filled",
+            exchange_id=None,
+            grid_level=grid_level,
+        )
+        strategy_instance.on_order_filled(restored_order, trade.price)
+
+    realized_sum = sum(
+        Decimal(str(trade.realized_pnl or 0)) for trade, _ in rows
+    )
+    strategy_instance.realized_pnl = realized_sum
 
 async def _tick_bot_async(bot_id: str, bot_data: dict[str, Any]) -> None:
     """Run a single strategy tick for a bot."""
@@ -696,6 +765,70 @@ async def _refresh_running_bot_config(bot_id: str, bot_data: dict[str, Any]) -> 
 # =============================================================================
 
 
+def _split_symbol(symbol: str | None) -> tuple[str | None, str | None]:
+    """Split symbol into base/quote assets."""
+    if not symbol or "/" not in symbol:
+        return None, None
+    base_symbol, quote_symbol = symbol.split("/", 1)
+    return base_symbol, quote_symbol
+
+
+def _fee_to_quote(
+    fee_cost: Decimal,
+    fee_currency: str | None,
+    price: Decimal,
+    base_symbol: str | None,
+    quote_symbol: str | None,
+) -> Decimal:
+    """Convert fee to quote currency when possible."""
+    if not fee_currency or not base_symbol or not quote_symbol:
+        return Decimal("0")
+    if fee_currency == quote_symbol:
+        return fee_cost
+    if fee_currency == base_symbol:
+        return fee_cost * price
+    return Decimal("0")
+
+
+def _apply_trade_to_fifo(
+    buy_lots: list[dict[str, Decimal]],
+    side: str,
+    price: Decimal,
+    quantity: Decimal,
+    fee_cost: Decimal,
+    fee_currency: str | None,
+    base_symbol: str | None,
+    quote_symbol: str | None,
+) -> Decimal:
+    """Apply a trade to FIFO lots and return realized PnL."""
+    fee_in_quote = _fee_to_quote(
+        fee_cost, fee_currency, price, base_symbol, quote_symbol
+    )
+    realized_pnl = Decimal("0")
+
+    if side == "buy":
+        effective_price = price
+        if quantity > 0 and fee_in_quote > 0:
+            effective_price += fee_in_quote / quantity
+        buy_lots.append({"price": effective_price, "quantity": quantity})
+        return realized_pnl
+
+    remaining = quantity
+    while remaining > 0 and buy_lots:
+        lot = buy_lots[0]
+        use_qty = min(remaining, lot["quantity"])
+        realized_pnl += (price - lot["price"]) * use_qty
+        lot["quantity"] -= use_qty
+        remaining -= use_qty
+        if lot["quantity"] <= 0:
+            buy_lots.pop(0)
+
+    if fee_in_quote > 0:
+        realized_pnl -= fee_in_quote
+
+    return realized_pnl
+
+
 @celery_app.task(bind=True, max_retries=5)
 def process_order_fill(self, bot_id: str, order_id: str, fill_data: dict) -> dict:
     """
@@ -728,7 +861,7 @@ async def _process_order_fill_async(
     bot_id: str, order_id: str, fill_data: dict
 ) -> dict:
     """Async implementation of order fill processing."""
-    from sqlalchemy import func, select
+    from sqlalchemy import func, select, update
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -782,6 +915,17 @@ async def _process_order_fill_async(
             fill_data.get("realizedPnl")
             or fill_data.get("realized_pnl")
         )
+        timestamp_value = (
+            fill_data.get("timestamp")
+            or fill_data.get("transactTime")
+            or fill_data.get("T")
+        )
+        trade_timestamp = None
+        if timestamp_value:
+            ts = int(timestamp_value)
+            if ts > 1_000_000_000_000:
+                ts = ts / 1000
+            trade_timestamp = datetime.fromtimestamp(ts, tz=timezone.utc)
 
         existing_trade = None
         if exchange_trade_id:
@@ -793,15 +937,21 @@ async def _process_order_fill_async(
                 )
             ).scalar_one_or_none()
         if existing_trade is None:
-            existing_trade = (
-                await db.execute(
-                    select(Trade).where(
-                        Trade.order_id == order.id,
-                        Trade.quantity == order.filled_quantity,
-                        Trade.price
-                        == (order.average_fill_price or order.price or Decimal("0")),
+            match_query = [
+                Trade.order_id == order.id,
+                Trade.quantity == order.filled_quantity,
+                Trade.price
+                == (order.average_fill_price or order.price or Decimal("0")),
+            ]
+            if trade_timestamp:
+                match_query.append(
+                    Trade.timestamp.between(
+                        trade_timestamp - timedelta(seconds=5),
+                        trade_timestamp + timedelta(seconds=5),
                     )
                 )
+            existing_trade = (
+                await db.execute(select(Trade).where(*match_query))
             ).scalar_one_or_none()
         if existing_trade:
             if (
@@ -817,22 +967,82 @@ async def _process_order_fill_async(
             }
 
         fee_value = fill_data.get("fee", fill_data.get("commission", 0))
+        if fee_value is None:
+            fee_value = fill_data.get("fees", 0)
         fee_currency = fill_data.get("feeAsset", fill_data.get("commissionAsset"))
         if isinstance(fee_value, dict):
-            fee_currency = fee_value.get("currency") or fee_currency
-            fee_value = fee_value.get("cost", 0)
+            fee_currency = (
+                fee_value.get("currency")
+                or fee_value.get("asset")
+                or fee_currency
+            )
+            fee_value = fee_value.get(
+                "cost", fee_value.get("commission", fee_value.get("fee", 0))
+            )
+        elif isinstance(fee_value, list):
+            total_fee = Decimal("0")
+            list_currency = None
+            for item in fee_value:
+                if isinstance(item, dict):
+                    cost = item.get(
+                        "cost", item.get("commission", item.get("fee", 0))
+                    )
+                    try:
+                        total_fee += Decimal(str(cost))
+                    except Exception:
+                        pass
+                    item_currency = (
+                        item.get("currency")
+                        or item.get("asset")
+                        or item.get("commissionAsset")
+                    )
+                    if item_currency and list_currency is None:
+                        list_currency = item_currency
+                else:
+                    try:
+                        total_fee += Decimal(str(item))
+                    except Exception:
+                        pass
+            fee_value = total_fee
+            if list_currency:
+                fee_currency = list_currency
 
-        timestamp_value = (
-            fill_data.get("timestamp")
-            or fill_data.get("transactTime")
-            or fill_data.get("T")
-        )
-        trade_timestamp = None
-        if timestamp_value:
-            ts = int(timestamp_value)
-            if ts > 1_000_000_000_000:
-                ts = ts / 1000
-            trade_timestamp = datetime.fromtimestamp(ts, tz=timezone.utc)
+        realized_pnl_value = realized_pnl_raw
+        if realized_pnl_value is None:
+            existing_trades = (
+                await db.execute(
+                    select(Trade)
+                    .where(Trade.bot_id == order.bot_id)
+                    .order_by(Trade.timestamp.asc())
+                )
+            ).scalars().all()
+
+            base_symbol, quote_symbol = _split_symbol(order.symbol)
+            buy_lots: list[dict[str, Decimal]] = []
+            for existing in existing_trades:
+                _apply_trade_to_fifo(
+                    buy_lots=buy_lots,
+                    side=existing.side,
+                    price=Decimal(str(existing.price)),
+                    quantity=Decimal(str(existing.quantity)),
+                    fee_cost=Decimal(str(existing.fee or 0)),
+                    fee_currency=existing.fee_currency,
+                    base_symbol=base_symbol,
+                    quote_symbol=quote_symbol,
+                )
+
+            realized_pnl_value = _apply_trade_to_fifo(
+                buy_lots=buy_lots,
+                side=order.side,
+                price=order.average_fill_price
+                or order.price
+                or Decimal("0"),
+                quantity=order.filled_quantity,
+                fee_cost=Decimal(str(fee_value or 0)),
+                fee_currency=fee_currency,
+                base_symbol=base_symbol,
+                quote_symbol=quote_symbol,
+            )
 
         # Create trade record
         trade = Trade(
@@ -847,9 +1057,7 @@ async def _process_order_fill_async(
             quantity=order.filled_quantity,
             fee=Decimal(str(fee_value or 0)),
             fee_currency=fee_currency,
-            realized_pnl=Decimal(str(realized_pnl_raw))
-            if realized_pnl_raw is not None
-            else None,
+            realized_pnl=Decimal(str(realized_pnl_value or 0)),
         )
         if trade_timestamp:
             trade.timestamp = trade_timestamp
@@ -1072,10 +1280,8 @@ async def _reconcile_bot_trades_async(
             sorted_trades = sorted(
                 trades, key=lambda t: t.get("timestamp") or 0
             )
-            base_symbol = None
-            quote_symbol = None
-            if bot.symbol and "/" in bot.symbol:
-                base_symbol, quote_symbol = bot.symbol.split("/", 1)
+            base_symbol, quote_symbol = _split_symbol(bot.symbol)
+            touched_order_ids: set[UUID] = set()
 
             for trade_data in sorted_trades:
                 trade_id = trade_data.get("id")
@@ -1104,32 +1310,16 @@ async def _reconcile_bot_trades_async(
                 elif fee is not None:
                     fee_cost = Decimal(str(fee or 0))
 
-                fee_in_quote = Decimal("0")
-                if fee_currency and quote_symbol and base_symbol:
-                    if fee_currency == quote_symbol:
-                        fee_in_quote = fee_cost
-                    elif fee_currency == base_symbol:
-                        fee_in_quote = fee_cost * price
-
-                realized_pnl = Decimal("0")
-                if side == "buy":
-                    if quantity > 0:
-                        effective_price = price
-                        if fee_in_quote > 0:
-                            effective_price += fee_in_quote / quantity
-                        buy_lots.append({"price": effective_price, "quantity": quantity})
-                else:
-                    remaining = quantity
-                    while remaining > 0 and buy_lots:
-                        lot = buy_lots[0]
-                        use_qty = min(remaining, lot["quantity"])
-                        realized_pnl += (price - lot["price"]) * use_qty
-                        lot["quantity"] -= use_qty
-                        remaining -= use_qty
-                        if lot["quantity"] <= 0:
-                            buy_lots.pop(0)
-                    if fee_in_quote > 0:
-                        realized_pnl -= fee_in_quote
+                realized_pnl = _apply_trade_to_fifo(
+                    buy_lots=buy_lots,
+                    side=side,
+                    price=price,
+                    quantity=quantity,
+                    fee_cost=fee_cost,
+                    fee_currency=fee_currency,
+                    base_symbol=base_symbol,
+                    quote_symbol=quote_symbol,
+                )
 
                 if trade_id:
                     existing = (
@@ -1184,8 +1374,39 @@ async def _reconcile_bot_trades_async(
                     trade.timestamp = trade_timestamp
                 db.add(trade)
                 created += 1
+                touched_order_ids.add(order.id)
 
             await db.flush()
+
+            if touched_order_ids:
+                totals = (
+                    await db.execute(
+                        select(
+                            Trade.order_id,
+                            func.sum(Trade.quantity).label("filled_qty"),
+                            func.sum(Trade.price * Trade.quantity).label("notional"),
+                        )
+                        .where(Trade.order_id.in_(list(touched_order_ids)))
+                        .group_by(Trade.order_id)
+                    )
+                ).all()
+                totals_map = {
+                    row[0]: (Decimal(str(row[1] or 0)), Decimal(str(row[2] or 0)))
+                    for row in totals
+                }
+                orders_by_id = {order.id: order for order in orders_by_exchange.values()}
+                for order_id, (filled_qty, notional) in totals_map.items():
+                    order_obj = orders_by_id.get(order_id)
+                    if not order_obj:
+                        continue
+                    order_obj.filled_quantity = filled_qty
+                    if filled_qty > 0:
+                        order_obj.average_fill_price = notional / filled_qty
+                    if filled_qty >= order_obj.quantity:
+                        order_obj.status = "filled"
+                        order_obj.filled_at = datetime.now(timezone.utc)
+                    elif filled_qty > 0:
+                        order_obj.status = "partially_filled"
             realized_sum = (
                 await db.execute(
                     select(func.coalesce(func.sum(Trade.realized_pnl), 0)).where(
@@ -1332,7 +1553,7 @@ def sync_bot_metrics(self, bot_id: str) -> dict:
 
 async def _sync_bot_metrics_async(bot_id: str) -> dict:
     """Async implementation of bot metrics sync."""
-    from sqlalchemy import select, update
+    from sqlalchemy import func, select, update
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -1383,6 +1604,16 @@ async def _sync_bot_metrics_async(bot_id: str) -> dict:
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session() as db:
+        from api.models.orm import Trade
+
+        realized_sum = (
+            await db.execute(
+                select(func.coalesce(func.sum(Trade.realized_pnl), 0)).where(
+                    Trade.bot_id == UUID(bot_id)
+                )
+            )
+        ).scalar_one()
+        realized_pnl = Decimal(str(realized_sum))
         stmt = (
             update(Bot)
             .where(Bot.id == UUID(bot_id))

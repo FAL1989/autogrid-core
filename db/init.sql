@@ -73,10 +73,21 @@ CREATE TABLE IF NOT EXISTS orders (
     side VARCHAR(10) NOT NULL CHECK (side IN ('buy', 'sell')),
     type VARCHAR(10) NOT NULL CHECK (type IN ('limit', 'market')),
     price DECIMAL(20, 8),
+    grid_level INTEGER,
     quantity DECIMAL(20, 8) NOT NULL,
     filled_quantity DECIMAL(20, 8) DEFAULT 0,
     average_fill_price DECIMAL(20, 8),
-    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'open', 'filled', 'partially_filled', 'cancelled', 'error')),
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN (
+        'pending',
+        'submitting',
+        'open',
+        'partially_filled',
+        'filled',
+        'cancelling',
+        'cancelled',
+        'rejected',
+        'error'
+    )),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     filled_at TIMESTAMPTZ
@@ -160,6 +171,11 @@ CREATE INDEX IF NOT EXISTS idx_bot_events_bot_id ON bot_events(bot_id, created_a
 CREATE INDEX IF NOT EXISTS idx_bot_events_event_type ON bot_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_orders_bot_id ON orders(bot_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_grid_level ON orders(grid_level);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_open_grid_level
+    ON orders(bot_id, side, grid_level)
+    WHERE status IN ('open', 'pending', 'submitting', 'partially_filled')
+      AND grid_level IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_trades_bot_id ON trades(bot_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_trades_exchange_trade_id ON trades(exchange_trade_id);
 CREATE INDEX IF NOT EXISTS idx_ohlcv_lookup ON ohlcv_cache(exchange, symbol, timeframe, timestamp DESC);

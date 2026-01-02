@@ -366,6 +366,10 @@ class Order(Base):
         Numeric(20, 8),
         nullable=True,
     )
+    grid_level: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
     quantity: Mapped[Decimal] = mapped_column(
         Numeric(20, 8),
         nullable=False,

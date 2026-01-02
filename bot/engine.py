@@ -8,7 +8,7 @@ Manages strategy execution, order placement, and position tracking.
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 from typing import Callable, Protocol
 from uuid import UUID
 
@@ -203,9 +203,45 @@ class BotEngine:
         except Exception as e:
             logger.warning(f"Failed to fetch balance for checks: {e}")
 
+        min_notional = None
+        min_qty = None
+        step_size = None
+        if self.exchange:
+            try:
+                min_notional = await self.exchange.get_min_notional(
+                    self.config.symbol
+                )
+            except Exception as e:
+                logger.warning(f"Failed to fetch min_notional: {e}")
+            if hasattr(self.exchange, "get_min_qty"):
+                try:
+                    min_qty = await self.exchange.get_min_qty(self.config.symbol)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch min_qty: {e}")
+            if hasattr(self.exchange, "get_step_size"):
+                try:
+                    step_size = await self.exchange.get_step_size(self.config.symbol)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch step size: {e}")
+
+        filtered_orders = self._filter_orders_by_balance(
+            new_orders,
+            current_price,
+            balance,
+            min_notional,
+            min_qty,
+            step_size,
+        )
+
         # Execute orders with risk management and circuit breaker
-        for order in new_orders:
-            await self._execute_order_with_checks(order, current_price, balance)
+        for order in filtered_orders:
+            await self._execute_order_with_checks(
+                order,
+                current_price,
+                balance,
+                skip_min_notional=min_notional is not None,
+                skip_balance_check=balance is not None,
+            )
 
     async def _get_open_orders(self) -> list[Order]:
         """Get currently open orders."""
@@ -232,8 +268,25 @@ class BotEngine:
         order: Order,
         current_price: Decimal,
         balance: dict | None,
+        skip_min_notional: bool = False,
+        skip_balance_check: bool = False,
     ) -> None:
         """Execute order with circuit breaker and risk checks."""
+        if (
+            self.order_manager
+            and order.grid_level is not None
+            and self.order_manager.has_active_grid_order(
+                self.config.id, order.side, order.grid_level
+            )
+        ):
+            logger.info(
+                "Order skipped (duplicate grid level): %s %s level=%s",
+                order.side,
+                self.config.symbol,
+                order.grid_level,
+            )
+            return
+
         # Check circuit breaker
         if self.circuit_breaker:
             allowed, reason = await self.circuit_breaker.check_order_allowed(
@@ -247,12 +300,14 @@ class BotEngine:
                 return
 
         # Check exchange minimum notional
-        if not await self._check_min_notional(order, current_price):
-            return
+        if not skip_min_notional:
+            if not await self._check_min_notional(order, current_price):
+                return
 
         # Check available balance
-        if not self._check_available_balance(order, current_price, balance):
-            return
+        if not skip_balance_check:
+            if not self._check_available_balance(order, current_price, balance):
+                return
 
         # Check risk manager
         if not self._check_order(order, current_price):
@@ -340,6 +395,99 @@ class BotEngine:
 
         return True
 
+    def _normalize_quantity(
+        self,
+        quantity: Decimal,
+        min_qty: Decimal | None,
+        step_size: Decimal | None,
+    ) -> Decimal:
+        """Normalize quantity to exchange step size and minimums."""
+        normalized = quantity
+        if step_size and step_size > 0:
+            precision = (normalized / step_size).to_integral_value(
+                rounding=ROUND_DOWN
+            )
+            normalized = precision * step_size
+        if min_qty and normalized < min_qty:
+            return Decimal("0")
+        return normalized
+
+    def _filter_orders_by_balance(
+        self,
+        orders: list[Order],
+        current_price: Decimal,
+        balance: dict | None,
+        min_notional: Decimal | None,
+        min_qty: Decimal | None,
+        step_size: Decimal | None,
+    ) -> list[Order]:
+        """Filter and prioritize orders based on available balance."""
+        if not balance:
+            return orders
+
+        symbol_parts = self.config.symbol.split("/")
+        if len(symbol_parts) != 2:
+            return orders
+
+        base_asset, quote_asset = symbol_parts[0], symbol_parts[1]
+        free_balances = balance.get("free") or {}
+        free_quote = Decimal(str(free_balances.get(quote_asset, 0) or 0))
+        free_base = Decimal(str(free_balances.get(base_asset, 0) or 0))
+
+        prioritized = sorted(
+            orders,
+            key=lambda o: abs((o.price or current_price) - current_price),
+        )
+
+        accepted: list[Order] = []
+        blocked_reasons: list[str] = []
+
+        for order in prioritized:
+            price = order.price or current_price
+            normalized_qty = self._normalize_quantity(
+                order.quantity, min_qty, step_size
+            )
+            if normalized_qty <= 0:
+                blocked_reasons.append("min_qty/step")
+                continue
+            if normalized_qty != order.quantity:
+                order.quantity = normalized_qty
+
+            if order.side == "buy":
+                notional = price * order.quantity
+                if min_notional and notional < min_notional:
+                    blocked_reasons.append("min_notional")
+                    continue
+                if free_quote < notional:
+                    blocked_reasons.append("balance_quote")
+                    continue
+                free_quote -= notional
+            else:
+                if free_base < order.quantity:
+                    adjusted_qty = self._normalize_quantity(
+                        free_base, min_qty, step_size
+                    )
+                    if adjusted_qty <= 0:
+                        blocked_reasons.append("balance_base")
+                        continue
+                    order.quantity = adjusted_qty
+                notional = price * order.quantity
+                if min_notional and notional < min_notional:
+                    blocked_reasons.append("min_notional")
+                    continue
+                if free_base < order.quantity:
+                    blocked_reasons.append("balance_base")
+                    continue
+                free_base -= order.quantity
+
+            accepted.append(order)
+
+        if blocked_reasons:
+            reason = blocked_reasons[0]
+            logger.warning("Order blocked by %s (suppressed repeated warnings)", reason)
+
+        return accepted
+
     def _check_order(self, order: Order, current_price: Decimal) -> bool:
         """Validate order against risk rules."""
         if self.risk_manager is None:
@@ -409,10 +557,20 @@ class BotEngine:
         symbol_base = self.config.symbol.split("/")[0]
         current_position = self._position.get(symbol_base, Decimal("0"))
 
+        filled_quantity = order.filled_quantity
+        if (
+            order.side == "buy"
+            and order.fee_asset
+            and order.fee_asset.upper() == symbol_base.upper()
+            and order.fee > 0
+        ):
+            # Net base received after fee (Binance fees often charged in base on buys).
+            filled_quantity = max(order.filled_quantity - order.fee, Decimal("0"))
+
         if order.side == "buy":
-            self._position[symbol_base] = current_position + order.filled_quantity
+            self._position[symbol_base] = current_position + filled_quantity
         else:
-            self._position[symbol_base] = current_position - order.filled_quantity
+            self._position[symbol_base] = current_position - filled_quantity
 
         # Notify strategy and get realized P&L
         realized_pnl = Decimal("0")
@@ -423,7 +581,7 @@ class BotEngine:
                 side=order.side,
                 type=order.order_type,
                 price=order.price,
-                quantity=order.filled_quantity,
+                quantity=filled_quantity,
                 status="filled",
                 exchange_id=order.exchange_id,
                 grid_level=order.grid_level,
