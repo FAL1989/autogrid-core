@@ -21,7 +21,7 @@ services:
       redis:
         condition: service_started
     restart: unless-stopped
-    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 4 --ws-ping-interval 30 --ws-ping-timeout 30
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 4 --ws-ping-interval 30 --ws-ping-timeout 30 --proxy-headers --forwarded-allow-ips="*"
 
   # ===========================================
   # Bot Engine Service - Production
@@ -85,6 +85,7 @@ services:
     ports:
       - "3000:3000"
     environment:
+      - API_URL=${API_URL:-http://localhost:8000}
       - NEXT_PUBLIC_API_URL=${API_URL:-http://localhost:8000}
       - NODE_ENV=production
     depends_on:
