@@ -87,3 +87,8 @@ temp/
 # Claude AI
 .claude/
 CLAUDE.md
+
+# Prompt Project
+PROMPT_PROJETO.md
+
+.claude
