@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.orm import Order as OrderORM
 from bot.exchange.connector import ExchangeConnector
+from bot.notifications import Notifier, NullNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +187,7 @@ class OrderManager:
         exchange: ExchangeConnector,
         db_session: AsyncSession,
         on_order_filled: Callable[[ManagedOrder], None] | None = None,
+        notifier: Notifier | None = None,
         base_retry_delay: float = 1.0,
         max_retry_delay: float = 30.0,
     ) -> None:
@@ -202,6 +204,7 @@ class OrderManager:
         self.exchange = exchange
         self.db_session = db_session
         self.on_order_filled = on_order_filled
+        self.notifier = notifier or NullNotifier()
         self.base_retry_delay = base_retry_delay
         self.max_retry_delay = max_retry_delay
 
@@ -701,18 +704,17 @@ class OrderManager:
                     }
                 )
                 try:
-                    from api.services.telegram_service import notify_order_filled
                     asyncio.create_task(
-                        notify_order_filled(
+                        self.notifier.notify_order_filled(
                             user_id,
                             order.symbol,
                             order.side,
                             order.filled_quantity,
                             order.average_fill_price or order.price or Decimal("0"),
-                        )
+                        ),
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to queue Telegram fill notification: {e}")
+                    logger.warning(f"Failed to queue fill notification: {e}")
 
                 if self.on_order_filled:
                     if asyncio.iscoroutinefunction(self.on_order_filled):

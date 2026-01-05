@@ -14,6 +14,7 @@ from uuid import UUID
 
 from bot.circuit_breaker import CircuitBreaker
 from bot.exchange.connector import ExchangeConnector
+from bot.notifications import Notifier, NullNotifier
 from bot.order_manager import ManagedOrder, OrderManager, OrderState
 from bot.strategies.base import BaseStrategy, Order
 
@@ -71,6 +72,7 @@ class BotEngine:
         circuit_breaker: CircuitBreaker | None = None,
         risk_manager: RiskManager | None = None,
         on_order_filled: Callable[[ManagedOrder], None] | None = None,
+        notifier: Notifier | None = None,
         tick_interval: float = 1.0,
     ) -> None:
         """
@@ -91,6 +93,7 @@ class BotEngine:
         self.circuit_breaker = circuit_breaker
         self.risk_manager = risk_manager
         self.on_order_filled = on_order_filled
+        self.notifier = notifier or NullNotifier()
         self.tick_interval = tick_interval
 
         # State
@@ -132,15 +135,14 @@ class BotEngine:
         except Exception as e:
             logger.error(f"Bot {self.config.id} error: {e}")
             try:
-                from api.services.telegram_service import notify_error
                 asyncio.create_task(
-                    notify_error(
+                    self.notifier.notify_error(
                         self.config.user_id,
                         f"Bot {self.config.id} error: {e}",
                     )
                 )
             except Exception as exc:
-                logger.warning(f"Failed to queue Telegram error notification: {exc}")
+                logger.warning(f"Failed to queue error notification: {exc}")
             raise
         finally:
             await self.stop()

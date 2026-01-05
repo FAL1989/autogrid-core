@@ -16,6 +16,8 @@ from celery import Celery
 from celery.signals import worker_ready
 from celery.schedules import crontab
 
+from bot.notifications import get_notifier
+
 logger = logging.getLogger(__name__)
 
 # Configure Celery
@@ -337,10 +339,13 @@ async def _start_bot_async(
         )
         circuit_breaker = CircuitBreaker(redis_client, cb_config)
 
+        notifier = get_notifier()
+
         # Create order manager
         order_manager = OrderManager(
             exchange=connector,
             db_session=db,
+            notifier=notifier,
         )
 
         # Load existing orders
@@ -360,6 +365,7 @@ async def _start_bot_async(
             ),
             order_manager=order_manager,
             circuit_breaker=circuit_breaker,
+            notifier=notifier,
         )
 
         order_manager.on_order_filled = engine.handle_order_filled
@@ -2130,9 +2136,9 @@ async def _update_bot_status(bot_id: str, status: str, error_message: str | None
 
             if status == "error" and error_message:
                 try:
-                    from api.services.telegram_service import notify_error
-                    await notify_error(bot.user_id, error_message)
+                    notifier = get_notifier()
+                    await notifier.notify_error(bot.user_id, error_message)
                 except Exception as exc:
-                    logger.warning(f"Failed to send Telegram error: {exc}")
+                    logger.warning(f"Failed to send error notification: {exc}")
 
     await engine.dispose()
