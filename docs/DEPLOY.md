@@ -38,32 +38,55 @@ Optional (if private repo + Codecov):
 
 ## 2) Monitoring (Prometheus/Grafana)
 
+Production monitoring stack (VPS):
+- Location: `/opt/autogrid/monitoring`
+- Compose file: `/opt/autogrid/monitoring/docker-compose.monitoring.yml`
+- Env file: `/opt/autogrid/monitoring/.env` (currently used for `POSTGRES_PASSWORD`)
+- Ports (localhost-only):
+  - Prometheus: `127.0.0.1:9091`
+  - Grafana: `127.0.0.1:3003` (default admin/admin, change after first login)
+  - Alertmanager: `127.0.0.1:9094`
+  - Blackbox: `127.0.0.1:9115`
+  - Node exporter: `127.0.0.1:9101`
+  - cAdvisor: `127.0.0.1:8081`
+  - Postgres exporter: `127.0.0.1:9187`
+  - Redis exporter: `127.0.0.1:9121`
+- Config files:
+  - Prometheus: `/opt/autogrid/monitoring/prometheus/prometheus.yml`
+  - Prometheus alerts: `/opt/autogrid/monitoring/prometheus/alerts.yml`
+  - Blackbox modules: `/opt/autogrid/monitoring/blackbox/blackbox.yml`
+  - Alertmanager: `/opt/autogrid/monitoring/alertmanager/alertmanager.yml` (contains Telegram token/chat ID; keep chmod 600)
+  - Grafana provisioning: `/opt/autogrid/monitoring/grafana/provisioning/`
+  - Grafana dashboard: `/opt/autogrid/monitoring/grafana/dashboards/autogrid-overview.json`
+- Blackbox targets (current):  
+  - https://autogrid.falai.agency  
+  - https://autogrid.falai.agency/login
+
 Minimum recommended checks:
-- HTTP uptime for:
-  - https://autogrid.falai.agency (web)
-  - https://autogrid.falai.agency/health (api)
+- HTTP uptime for web UI (root + login)
 - Container health (docker ps status)
-- CPU, memory, disk, and network on the VPS
+- CPU, memory, disk on the VPS
 - Postgres and Redis health
 
-Suggested components (if not already deployed):
-- node_exporter (host metrics)
-- cAdvisor (container metrics)
-- postgres_exporter
-- redis_exporter
-- blackbox_exporter (HTTP probes)
+Monitoring commands:
+- Status: `docker compose -f /opt/autogrid/monitoring/docker-compose.monitoring.yml ps`
+- Start/Update: `docker compose -f /opt/autogrid/monitoring/docker-compose.monitoring.yml up -d`
+- Logs: `docker logs <container>`
 
 ## 3) Alerts
 
-Create alerts for:
-- Web/API down (HTTP != 200 for 2-5 minutes)
-- API error rate spike (5xx)
-- Redis down
-- Postgres down
-- Disk usage > 85%
-- Memory usage > 90%
-- Container restart loops (autogrid-api, autogrid-web, autogrid-celery)
-- Bot in error state (optional, via DB or logs)
+Active alert rules (Prometheus): `/opt/autogrid/monitoring/prometheus/alerts.yml`
+- TargetDown (any scrape target down)
+- HTTPProbeFailed (blackbox targets)
+- HighCPU (>90% for 10m)
+- LowMemory (<10% for 10m)
+- LowDiskSpace (<10% for 15m)
+- PostgresDown
+- RedisDown
+
+Alert routing (Alertmanager):
+- Telegram only, configured in `/opt/autogrid/monitoring/alertmanager/alertmanager.yml`
+- Keep the file protected (chmod 600). If token/chat ID changes, update the file and restart Alertmanager.
 
 ## 4) Deploy Process (VPS)
 
@@ -100,4 +123,3 @@ Minimum checks:
 - Create / edit bot works
 - Trades and balance load
 - Start/stop bot works
-

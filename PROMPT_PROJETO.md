@@ -389,9 +389,9 @@ make docker-up
 
 #### 14. Preparar para Deploy
 - [x] Configurar secrets no GitHub
-- [ ] Setup de monitoring (Prometheus/Grafana)
-- [ ] Configurar alertas
-- [ ] Documentar processo de deploy
+- [x] Setup de monitoring (Prometheus/Grafana)
+- [x] Configurar alertas
+- [x] Documentar processo de deploy
 
 ---
 
