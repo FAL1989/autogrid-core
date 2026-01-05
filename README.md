@@ -96,6 +96,98 @@ python -m autogrid_cli --help
 Config is stored in `~/.config/autogrid/config.toml` (permissions 600).
 You can override per run with `AUTOGRID_API_URL` and `AUTOGRID_TOKEN`.
 
+### CLI Quickstart
+
+1) Activate your environment and install dependencies:
+
+```bash
+# Optional: create a venv if you do not have one yet
+python3 -m venv .venv
+source .venv/bin/activate
+
+python -m pip install -r requirements.txt
+```
+
+2) Set the API URL (one time):
+
+```bash
+./autogrid config set api-url https://autogrid.falai.agency
+# or for a single run
+export AUTOGRID_API_URL=https://autogrid.falai.agency
+```
+
+3) Login and verify:
+
+```bash
+./autogrid auth login
+./autogrid auth status
+```
+
+4) Add exchange credentials:
+
+```bash
+./autogrid credentials add --exchange binance --testnet=false
+./autogrid credentials list
+```
+
+5) Create and start a grid bot:
+
+```bash
+./autogrid bots create \
+  --name "MyBot" \
+  --credential-id <CREDENTIAL_ID> \
+  --strategy grid \
+  --symbol BTC/USDT \
+  --lower-price 89000 \
+  --upper-price 93000 \
+  --grid-count 6 \
+  --investment 50
+
+./autogrid bots start <BOT_ID>
+```
+
+6) Monitor activity:
+
+```bash
+./autogrid bots list
+./autogrid orders open <BOT_ID>
+./autogrid trades list <BOT_ID>
+```
+
+### Backtest Example
+
+```bash
+cat > backtest-grid.json <<'JSON'
+{
+  "lower_price": 89000,
+  "upper_price": 93000,
+  "grid_count": 6,
+  "investment": 50
+}
+JSON
+
+./autogrid backtest run \
+  --strategy grid \
+  --symbol BTC/USDT \
+  --timeframe 1h \
+  --start-date 2024-01-01 \
+  --end-date 2024-02-01 \
+  --config-file backtest-grid.json
+```
+
+### Telegram Link
+
+```bash
+./autogrid telegram link
+./autogrid telegram unlink
+```
+
+### Scriptable Output
+
+```bash
+./autogrid bots list --json
+```
+
 ## Documentation
 
 - [Technical Design Document](./AutoGrid_TDD_v1.0.md)
