@@ -388,7 +388,7 @@ make docker-up
 ### Sprint 6 - Produção
 
 #### 14. Preparar para Deploy
-- [ ] Configurar secrets no GitHub
+- [x] Configurar secrets no GitHub
 - [ ] Setup de monitoring (Prometheus/Grafana)
 - [ ] Configurar alertas
 - [ ] Documentar processo de deploy
