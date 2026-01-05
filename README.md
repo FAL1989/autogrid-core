@@ -79,6 +79,23 @@ make lint
 make format
 ```
 
+## CLI
+
+The CLI lets you manage bots and backtests via the API without touching the UI.
+
+```bash
+# From the repo root
+./autogrid --help
+python -m autogrid_cli --help
+
+# Authenticate
+./autogrid auth login
+./autogrid auth status
+```
+
+Config is stored in `~/.config/autogrid/config.toml` (permissions 600).
+You can override per run with `AUTOGRID_API_URL` and `AUTOGRID_TOKEN`.
+
 ## Documentation
 
 - [Technical Design Document](./AutoGrid_TDD_v1.0.md)
