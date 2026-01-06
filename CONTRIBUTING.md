@@ -68,18 +68,6 @@ make format
 make lint
 ```
 
-### TypeScript/JavaScript
-
-- **Linter**: ESLint with Next.js config
-- **Formatter**: Prettier (via ESLint)
-- **Strict TypeScript**: enabled
-
-```bash
-cd web
-npm run lint
-npm run typecheck
-```
-
 ### Commit Messages
 
 We use [Conventional Commits](https://www.conventionalcommits.org/):
@@ -120,7 +108,6 @@ autogrid/
 ├── bot/                 # Bot engine
 │   ├── strategies/      # Trading strategies
 │   └── exchange/        # Exchange connectors
-├── web/                 # Next.js frontend
 ├── tests/               # Test suite
 │   ├── unit/            # Unit tests
 │   └── integration/     # Integration tests

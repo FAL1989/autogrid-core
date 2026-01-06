@@ -24,6 +24,7 @@ class ApiClient:
         if base_url.endswith("/api/v1"):
             base_url = base_url[: -len("/api/v1")]
         self.base_url = base_url
+        self.profile = settings.profile
         self.access_token = settings.access_token
         self.refresh_token = settings.refresh_token
         self.persist_tokens = settings.token_source == "config"
@@ -103,7 +104,9 @@ class ApiClient:
         self.access_token = payload.get("access_token")
         self.refresh_token = payload.get("refresh_token")
         if self.persist_tokens and self.access_token and self.refresh_token:
-            self.store.set_tokens(self.access_token, self.refresh_token)
+            self.store.set_profile_tokens(
+                self.profile, self.access_token, self.refresh_token
+            )
             self.store.save()
 
     @staticmethod

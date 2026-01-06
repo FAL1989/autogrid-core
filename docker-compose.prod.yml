@@ -76,23 +76,6 @@ services:
     restart: unless-stopped
 
   # ===========================================
-  # Web Dashboard (Next.js) - Production
-  # ===========================================
-  web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile.prod
-    ports:
-      - "3000:3000"
-    environment:
-      - API_URL=${API_URL:-http://localhost:8000}
-      - NEXT_PUBLIC_API_URL=${API_URL:-http://localhost:8000}
-      - NODE_ENV=production
-    depends_on:
-      - api
-    restart: unless-stopped
-
-  # ===========================================
   # PostgreSQL + TimescaleDB
   # ===========================================
   postgres:

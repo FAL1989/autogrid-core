@@ -42,9 +42,10 @@ def main(
     api_url: str | None = typer.Option(
         None, "--api-url", help="Override API URL for this run"
     ),
+    profile: str | None = typer.Option(None, "--profile", help="Config profile to use"),
 ) -> None:
     """Load CLI configuration and initialize context."""
-    ctx.obj = load_settings(api_url, json_output)
+    ctx.obj = load_settings(api_url, json_output, profile_override=profile)
 
 
 def _require_auth(settings: Settings) -> None:
@@ -110,8 +111,11 @@ def auth_login(
             data = client.request("POST", "/auth/login", json_body=payload)
     except ApiError as exc:
         _handle_api_error(exc)
-    settings.store.set_api_url(settings.api_url)
-    settings.store.set_tokens(data["access_token"], data["refresh_token"])
+    settings.store.set_active_profile(settings.profile)
+    settings.store.set_profile_api_url(settings.profile, settings.api_url)
+    settings.store.set_profile_tokens(
+        settings.profile, data["access_token"], data["refresh_token"]
+    )
     settings.store.save()
     if settings.json_output:
         print_json({"user_id": data["user_id"], "saved": True})
@@ -146,12 +150,35 @@ def auth_status(ctx: typer.Context) -> None:
 @auth_app.command("logout")
 def auth_logout(ctx: typer.Context) -> None:
     settings: Settings = ctx.obj
-    settings.store.clear_tokens()
+    settings.store.clear_profile_tokens(settings.profile)
     settings.store.save()
     if settings.json_output:
-        print_json({"logged_out": True})
+        print_json({"logged_out": True, "profile": settings.profile})
     else:
         typer.echo("Logged out. Tokens cleared from config.")
+
+@config_app.command("show")
+def config_show(ctx: typer.Context) -> None:
+    settings: Settings = ctx.obj
+    payload = {
+        "config_path": str(settings.config_path),
+        "profile": settings.profile,
+        "api_url": settings.api_url,
+        "token_source": settings.token_source,
+        "profiles": settings.store.list_profiles(),
+    }
+    if settings.json_output:
+        print_json(payload)
+        return
+    print_kv(
+        "Config",
+        [
+            ("Path", payload["config_path"]),
+            ("Profile", payload["profile"]),
+            ("API URL", payload["api_url"]),
+            ("Token Source", payload["token_source"]),
+        ],
+    )
 
 
 @config_app.command("get")
@@ -160,14 +187,21 @@ def config_get(
     key: str = typer.Argument("api-url", help="Config key to read"),
 ) -> None:
     settings: Settings = ctx.obj
-    if key != "api-url":
-        typer.secho("Only api-url is supported.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=1)
-    api_url = settings.store.get("api", "url") or DEFAULT_API_URL
-    if settings.json_output:
-        print_json({"api_url": api_url})
-    else:
-        typer.echo(api_url)
+    if key == "api-url":
+        api_url = settings.store.get_profile_api_url(settings.profile) or DEFAULT_API_URL
+        if settings.json_output:
+            print_json({"api_url": api_url})
+        else:
+            typer.echo(api_url)
+        return
+    if key == "profile":
+        if settings.json_output:
+            print_json({"profile": settings.profile})
+        else:
+            typer.echo(settings.profile)
+        return
+    typer.secho("Supported keys: api-url, profile.", fg=typer.colors.RED, err=True)
+    raise typer.Exit(code=1)
 
 
 @config_app.command("set")
@@ -177,15 +211,24 @@ def config_set(
     value: str = typer.Argument(..., help="Value to set"),
 ) -> None:
     settings: Settings = ctx.obj
-    if key != "api-url":
-        typer.secho("Only api-url is supported.", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=1)
-    settings.store.set_api_url(value)
-    settings.store.save()
-    if settings.json_output:
-        print_json({"api_url": value})
-    else:
-        typer.echo("API URL saved.")
+    if key == "api-url":
+        settings.store.set_profile_api_url(settings.profile, value)
+        settings.store.save()
+        if settings.json_output:
+            print_json({"api_url": value, "profile": settings.profile})
+        else:
+            typer.echo("API URL saved.")
+        return
+    if key == "profile":
+        settings.store.set_active_profile(value)
+        settings.store.save()
+        if settings.json_output:
+            print_json({"profile": value})
+        else:
+            typer.echo("Active profile saved.")
+        return
+    typer.secho("Supported keys: api-url, profile.", fg=typer.colors.RED, err=True)
+    raise typer.Exit(code=1)
 
 
 @bots_app.command("list")

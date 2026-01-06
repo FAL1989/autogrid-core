@@ -30,15 +30,11 @@ help:
 # Installation
 # ===========================================
 
-install: install-python install-node
+install: install-python
 
 install-python:
 	@echo "Installing Python dependencies..."
 	pip install -r requirements.txt
-
-install-node:
-	@echo "Installing Node.js dependencies..."
-	cd web && npm install
 
 # ===========================================
 # Development
@@ -48,13 +44,9 @@ dev: docker-up
 	@echo "Development environment started!"
 	@echo "API: http://localhost:8000"
 	@echo "API Docs: http://localhost:8000/docs"
-	@echo "Web: http://localhost:3000"
 
 dev-api:
 	uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
-
-dev-web:
-	cd web && npm run dev
 
 # ===========================================
 # Testing
@@ -76,7 +68,7 @@ test-watch:
 # Linting & Formatting
 # ===========================================
 
-lint: lint-python lint-node
+lint: lint-python
 
 lint-python:
 	@echo "Running Python linters..."
@@ -85,25 +77,16 @@ lint-python:
 	flake8 api/ bot/ tests/
 	mypy api/ bot/
 
-lint-node:
-	@echo "Running Node.js linters..."
-	cd web && npm run lint
-
-format: format-python format-node
+format: format-python
 
 format-python:
 	@echo "Formatting Python code..."
 	black .
 	isort .
 
-format-node:
-	@echo "Formatting Node.js code..."
-	cd web && npm run lint:fix
-
 typecheck:
 	@echo "Running type checks..."
 	mypy api/ bot/
-	cd web && npm run typecheck
 
 # ===========================================
 # Build
@@ -113,9 +96,6 @@ build: build-docker
 
 build-docker:
 	docker-compose build
-
-build-web:
-	cd web && npm run build
 
 # ===========================================
 # Docker
@@ -165,21 +145,4 @@ clean:
 	find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	find . -type f -name ".coverage" -delete 2>/dev/null || true
-	rm -rf web/.next 2>/dev/null || true
 	@echo "Done!"
-
-# ===========================================
-# CLI
-# ===========================================
-
-cli-init:
-	python -m bot.cli init
-
-cli-credentials:
-	python -m bot.cli credentials add
-
-cli-bot-create:
-	python -m bot.cli bot create
-
-cli-backtest:
-	python -m bot.cli backtest

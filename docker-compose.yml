@@ -95,27 +95,6 @@ services:
       - ./api:/app/api
 
   # ===========================================
-  # Web Dashboard (Next.js)
-  # ===========================================
-  web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
-      - API_URL=http://api:8000
-      - NODE_ENV=development
-    depends_on:
-      - api
-    volumes:
-      - ./web:/app
-      - /app/node_modules
-      - /app/.next
-    command: npm run dev
-
-  # ===========================================
   # PostgreSQL + TimescaleDB
   # ===========================================
   postgres:
