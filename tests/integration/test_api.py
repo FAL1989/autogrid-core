@@ -85,13 +85,13 @@ class TestBotsEndpoints:
 
     async def test_list_bots_requires_auth(self, async_client: AsyncClient) -> None:
         """Test listing bots requires authentication."""
-        response = await async_client.get("/bots/")
+        response = await async_client.get("/api/v1/bots/")
 
         assert response.status_code == 401
 
     async def test_list_bots_empty(self, auth_client: AsyncClient) -> None:
         """Test listing bots when none exist."""
-        response = await auth_client.get("/bots/")
+        response = await auth_client.get("/api/v1/bots/")
 
         assert response.status_code == 200
         data = response.json()
@@ -106,7 +106,7 @@ class TestBotsEndpoints:
     ) -> None:
         """Test creating a grid trading bot."""
         response = await auth_client.post(
-            "/bots/",
+            "/api/v1/bots/",
             json={
                 "name": "Test Grid Bot",
                 "credential_id": str(test_credential.id),
@@ -135,7 +135,7 @@ class TestBotsEndpoints:
     ) -> None:
         """Test creating a DCA bot."""
         response = await auth_client.post(
-            "/bots/",
+            "/api/v1/bots/",
             json={
                 "name": "Test DCA Bot",
                 "credential_id": str(test_credential.id),
@@ -162,13 +162,13 @@ class TestCredentialsEndpoints:
         self, async_client: AsyncClient
     ) -> None:
         """Test listing credentials requires authentication."""
-        response = await async_client.get("/credentials/")
+        response = await async_client.get("/api/v1/credentials/")
 
         assert response.status_code == 401
 
     async def test_list_credentials_empty(self, auth_client: AsyncClient) -> None:
         """Test listing credentials when none exist."""
-        response = await auth_client.get("/credentials/")
+        response = await auth_client.get("/api/v1/credentials/")
 
         assert response.status_code == 200
         data = response.json()
@@ -178,14 +178,14 @@ class TestCredentialsEndpoints:
     async def test_get_credential_not_found(self, auth_client: AsyncClient) -> None:
         """Test getting non-existent credential."""
         fake_id = "00000000-0000-0000-0000-000000000000"
-        response = await auth_client.get(f"/credentials/{fake_id}")
+        response = await auth_client.get(f"/api/v1/credentials/{fake_id}")
 
         assert response.status_code == 404
 
     async def test_delete_credential_not_found(self, auth_client: AsyncClient) -> None:
         """Test deleting non-existent credential."""
         fake_id = "00000000-0000-0000-0000-000000000000"
-        response = await auth_client.delete(f"/credentials/{fake_id}")
+        response = await auth_client.delete(f"/api/v1/credentials/{fake_id}")
 
         assert response.status_code == 404
 
@@ -195,7 +195,7 @@ class TestCredentialsEndpoints:
         test_credential: ExchangeCredential,
     ) -> None:
         """Test getting an existing credential."""
-        response = await auth_client.get(f"/credentials/{test_credential.id}")
+        response = await auth_client.get(f"/api/v1/credentials/{test_credential.id}")
 
         assert response.status_code == 200
         data = response.json()
@@ -213,7 +213,7 @@ class TestCredentialsEndpoints:
         test_credential: ExchangeCredential,
     ) -> None:
         """Test listing credentials when one exists."""
-        response = await auth_client.get("/credentials/")
+        response = await auth_client.get("/api/v1/credentials/")
 
         assert response.status_code == 200
         data = response.json()
@@ -227,12 +227,12 @@ class TestCredentialsEndpoints:
         test_credential: ExchangeCredential,
     ) -> None:
         """Test deleting an existing credential."""
-        response = await auth_client.delete(f"/credentials/{test_credential.id}")
+        response = await auth_client.delete(f"/api/v1/credentials/{test_credential.id}")
 
         assert response.status_code == 204
 
         # Verify it's gone
-        response = await auth_client.get(f"/credentials/{test_credential.id}")
+        response = await auth_client.get(f"/api/v1/credentials/{test_credential.id}")
         assert response.status_code == 404
 
 
@@ -247,7 +247,7 @@ class TestOrdersEndpoints:
         from uuid import uuid4
 
         fake_bot_id = str(uuid4())
-        response = await async_client.get(f"/orders/bots/{fake_bot_id}/orders")
+        response = await async_client.get(f"/api/v1/orders/bots/{fake_bot_id}/orders")
 
         assert response.status_code == 401
 
@@ -258,7 +258,7 @@ class TestOrdersEndpoints:
         from uuid import uuid4
 
         fake_bot_id = str(uuid4())
-        response = await auth_client.get(f"/orders/bots/{fake_bot_id}/orders")
+        response = await auth_client.get(f"/api/v1/orders/bots/{fake_bot_id}/orders")
 
         assert response.status_code == 404
 
@@ -287,7 +287,7 @@ class TestOrdersEndpoints:
         await db_session.flush()
         await db_session.refresh(bot)
 
-        response = await auth_client.get(f"/orders/bots/{bot.id}/orders")
+        response = await auth_client.get(f"/api/v1/orders/bots/{bot.id}/orders")
 
         assert response.status_code == 200
         data = response.json()
@@ -344,7 +344,7 @@ class TestOrdersEndpoints:
         db_session.add_all([order1, order2])
         await db_session.flush()
 
-        response = await auth_client.get(f"/orders/bots/{bot.id}/orders")
+        response = await auth_client.get(f"/api/v1/orders/bots/{bot.id}/orders")
 
         assert response.status_code == 200
         data = response.json()
@@ -402,7 +402,7 @@ class TestOrdersEndpoints:
         await db_session.flush()
 
         # Filter by open status
-        response = await auth_client.get(f"/orders/bots/{bot.id}/orders?status=open")
+        response = await auth_client.get(f"/api/v1/orders/bots/{bot.id}/orders?status=open")
 
         assert response.status_code == 200
         data = response.json()
@@ -469,7 +469,7 @@ class TestOrdersEndpoints:
         db_session.add_all([order1, order2, order3])
         await db_session.flush()
 
-        response = await auth_client.get(f"/orders/bots/{bot.id}/orders/open")
+        response = await auth_client.get(f"/api/v1/orders/bots/{bot.id}/orders/open")
 
         assert response.status_code == 200
         data = response.json()
@@ -504,7 +504,7 @@ class TestOrdersEndpoints:
         db_session.add(bot)
         await db_session.flush()
 
-        response = await auth_client.get(f"/orders/bots/{bot.id}/trades")
+        response = await auth_client.get(f"/api/v1/orders/bots/{bot.id}/trades")
 
         assert response.status_code == 200
         data = response.json()
@@ -564,7 +564,7 @@ class TestOrdersEndpoints:
         db_session.add_all([trade1, trade2])
         await db_session.flush()
 
-        response = await auth_client.get(f"/orders/bots/{bot.id}/trades")
+        response = await auth_client.get(f"/api/v1/orders/bots/{bot.id}/trades")
 
         assert response.status_code == 200
         data = response.json()
@@ -622,7 +622,7 @@ class TestOrdersEndpoints:
         db_session.add_all(trades)
         await db_session.flush()
 
-        response = await auth_client.get(f"/orders/bots/{bot.id}/statistics")
+        response = await auth_client.get(f"/api/v1/orders/bots/{bot.id}/statistics")
 
         assert response.status_code == 200
         data = response.json()
@@ -664,7 +664,7 @@ class TestOrdersEndpoints:
 
         fake_order_id = str(uuid4())
         response = await auth_client.post(
-            f"/orders/bots/{bot.id}/orders/{fake_order_id}/cancel"
+            f"/api/v1/orders/bots/{bot.id}/orders/{fake_order_id}/cancel"
         )
 
         assert response.status_code == 404
@@ -710,7 +710,7 @@ class TestOrdersEndpoints:
         await db_session.flush()
 
         response = await auth_client.post(
-            f"/orders/bots/{bot.id}/orders/{order.id}/cancel"
+            f"/api/v1/orders/bots/{bot.id}/orders/{order.id}/cancel"
         )
 
         assert response.status_code == 200
@@ -759,7 +759,7 @@ class TestOrdersEndpoints:
         await db_session.flush()
 
         response = await auth_client.post(
-            f"/orders/bots/{bot.id}/orders/{order.id}/cancel"
+            f"/api/v1/orders/bots/{bot.id}/orders/{order.id}/cancel"
         )
 
         assert response.status_code == 409  # Conflict

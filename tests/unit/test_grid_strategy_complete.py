@@ -122,7 +122,7 @@ class TestGridStrategySellOrders:
     """Tests for GridStrategy sell order generation."""
 
     def test_generates_sell_orders_with_position(self, grid_config: dict) -> None:
-        """Test that sell orders are created when position exists and price is above."""
+        """Test that sell orders are created at the next grid level when position exists."""
         strategy = GridStrategy(
             symbol=grid_config["symbol"],
             investment=Decimal(str(grid_config["investment"])),
@@ -141,20 +141,20 @@ class TestGridStrategySellOrders:
         )
         strategy.on_order_filled(buy_order, Decimal("47500"))
 
-        # Current price BELOW the level with position
-        # The sell order should be generated because the level price (47500) is ABOVE current price (46000)
+        # Current price BELOW the position level
+        # The sell order should be generated at the next grid level (i+1), regardless of current price.
         current_price = Decimal("46000")
         orders = strategy.calculate_orders(current_price, [])
 
-        # Sell order should be generated for level 5 (47500 > 46000)
+        # Sell order should be generated for level 5 at the next grid level price
         sell_orders = [o for o in orders if o.side == "sell"]
         assert len(sell_orders) == 1
         assert sell_orders[0].grid_level == 5
-        assert sell_orders[0].price == Decimal("47500")
+        assert sell_orders[0].price == Decimal("48000")
         assert sell_orders[0].quantity == Decimal("0.02")
 
-    def test_no_sell_orders_when_price_above_position(self, grid_config: dict) -> None:
-        """Test that no sell orders when current price is above position level."""
+    def test_sell_orders_when_price_above_position(self, grid_config: dict) -> None:
+        """Test that sell orders are still created even when price is above position level."""
         strategy = GridStrategy(
             symbol=grid_config["symbol"],
             investment=Decimal(str(grid_config["investment"])),
@@ -174,13 +174,15 @@ class TestGridStrategySellOrders:
         strategy.on_order_filled(buy_order, Decimal("47500"))
 
         # Current price ABOVE the level with position
-        # No sell order because the level price (47500) is BELOW current price (48000)
+        # Sell order is still placed at the next grid level (i+1)
         current_price = Decimal("48000")
         orders = strategy.calculate_orders(current_price, [])
 
-        # No sell orders when level price is below current price
+        # Sell order should still be generated for the next level
         sell_orders = [o for o in orders if o.side == "sell"]
-        assert len(sell_orders) == 0
+        assert len(sell_orders) == 1
+        assert sell_orders[0].grid_level == 5
+        assert sell_orders[0].price == Decimal("48000")
 
     def test_sell_orders_have_grid_level(self, grid_config: dict) -> None:
         """Test that sell orders have grid_level set."""
