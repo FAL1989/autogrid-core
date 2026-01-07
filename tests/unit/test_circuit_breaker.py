@@ -118,6 +118,7 @@ class TestCircuitBreaker:
         pipe_mock.ttl = MagicMock(return_value=pipe_mock)
         pipe_mock.execute = AsyncMock(return_value=[])
         mock.pipeline = MagicMock(return_value=pipe_mock)
+        mock.get = AsyncMock(return_value=None)
 
         return mock
 
@@ -536,7 +537,9 @@ class TestCircuitBreaker:
         """half_open should set HALF_OPEN state."""
         await circuit_breaker.half_open(bot_id)
 
-        circuit_breaker.redis.set.assert_called_once()
+        pipe = circuit_breaker.redis.pipeline.return_value
+        pipe.set.assert_called()
+        pipe.execute.assert_called_once()
 
     # ==================================================================
     # Status and Metrics Tests

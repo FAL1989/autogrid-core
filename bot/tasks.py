@@ -340,6 +340,9 @@ async def _start_bot_async(
                 str(settings.circuit_breaker_price_deviation)
             ),
             cooldown_seconds=settings.circuit_breaker_cooldown,
+            order_rate_window_seconds=settings.circuit_breaker_order_rate_window_seconds,
+            loss_window_seconds=settings.circuit_breaker_loss_window_seconds,
+            half_open_orders=settings.circuit_breaker_half_open_orders,
         )
         circuit_breaker = CircuitBreaker(redis_client, cb_config)
 

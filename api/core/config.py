@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     circuit_breaker_max_loss_percent: float = 5.0  # Max loss % per hour
     circuit_breaker_price_deviation: float = 10.0  # Max price deviation %
     circuit_breaker_cooldown: int = 300  # Cooldown in seconds after trip
+    circuit_breaker_order_rate_window_seconds: int = 60  # Order rate window
+    circuit_breaker_loss_window_seconds: int = 3600  # Loss tracking window
+    circuit_breaker_half_open_orders: int = 3  # Orders allowed in HALF_OPEN
 
     # Logging
     log_level: str = "INFO"

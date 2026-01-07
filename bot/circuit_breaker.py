@@ -25,6 +25,7 @@ LOSS_KEY = f"{REDIS_PREFIX}:loss"  # :{{bot_id}}:amount
 STATE_KEY = f"{REDIS_PREFIX}:state"  # :{{bot_id}}
 TRIP_REASON_KEY = f"{REDIS_PREFIX}:reason"  # :{{bot_id}}
 COOLDOWN_KEY = f"{REDIS_PREFIX}:cooldown"  # :{{bot_id}}
+HALF_OPEN_COUNT_KEY = f"{REDIS_PREFIX}:half_open"  # :{{bot_id}}:count
 
 
 class CircuitState(Enum):
@@ -51,10 +52,12 @@ class CircuitBreakerConfig:
     Circuit breaker configuration.
 
     Attributes:
-        max_orders_per_minute: Maximum orders per minute (default: 50)
-        max_loss_percent_per_hour: Maximum loss as % of investment per hour (default: 5.0)
+        max_orders_per_minute: Maximum orders per rate window (default: 50)
+        max_loss_percent_per_hour: Maximum loss as % of investment per loss window (default: 5.0)
         max_price_deviation_percent: Maximum order price deviation from market (default: 10.0)
         cooldown_seconds: Time to wait before allowing orders after trip (default: 300)
+        order_rate_window_seconds: Rate limiting window in seconds (default: 60)
+        loss_window_seconds: Loss tracking window in seconds (default: 3600)
         half_open_orders: Number of test orders allowed in half-open state (default: 3)
     """
 
@@ -62,6 +65,8 @@ class CircuitBreakerConfig:
     max_loss_percent_per_hour: Decimal = Decimal("5.0")
     max_price_deviation_percent: Decimal = Decimal("10.0")
     cooldown_seconds: int = 300
+    order_rate_window_seconds: int = 60
+    loss_window_seconds: int = 3600
     half_open_orders: int = 3
 
 
@@ -140,7 +145,19 @@ class CircuitBreaker:
         order_count = await self._get_order_count(bot_key)
         if order_count >= self.config.max_orders_per_minute:
             # Soft throttle: block new orders without tripping the breaker.
-            return False, f"order_rate_exceeded ({order_count}/{self.config.max_orders_per_minute}/min)"
+            return False, (
+                "order_rate_exceeded "
+                f"({order_count}/{self.config.max_orders_per_minute}"
+                f"/{self.config.order_rate_window_seconds}s)"
+            )
+
+        # Half-open safety: limit number of test orders
+        if state == CircuitState.HALF_OPEN:
+            if self.config.half_open_orders <= 0:
+                return False, "circuit_breaker_half_open_limit"
+            half_open_count = await self._get_half_open_count(bot_key)
+            if half_open_count >= self.config.half_open_orders:
+                return False, "circuit_breaker_half_open_limit"
 
         # Check loss limit
         loss_amount = await self._get_hourly_loss(bot_key)
@@ -162,7 +179,7 @@ class CircuitBreaker:
         """
         Record that an order was placed.
 
-        Increments order counter with 1-minute TTL for rate limiting.
+        Increments order counter with rate window TTL for limiting.
 
         Args:
             bot_id: Bot that placed the order
@@ -170,8 +187,19 @@ class CircuitBreaker:
         key = f"{ORDER_COUNT_KEY}:{bot_id}"
         pipe = self.redis.pipeline()
         pipe.incr(key)
-        pipe.expire(key, 60)  # 1 minute TTL
+        pipe.expire(key, self.config.order_rate_window_seconds)
         await pipe.execute()
+
+        state = await self.get_state(bot_id)
+        if state == CircuitState.HALF_OPEN:
+            half_open_key = f"{HALF_OPEN_COUNT_KEY}:{bot_id}"
+            pipe = self.redis.pipeline()
+            pipe.incr(half_open_key)
+            pipe.expire(half_open_key, self.config.order_rate_window_seconds)
+            results = await pipe.execute()
+            count = int(results[0]) if results and results[0] else 0
+            if self.config.half_open_orders > 0 and count >= self.config.half_open_orders:
+                await self.reset(bot_id)
 
     async def record_pnl(self, bot_id: UUID, pnl: Decimal) -> None:
         """
@@ -192,7 +220,7 @@ class CircuitBreaker:
 
         pipe = self.redis.pipeline()
         pipe.incrbyfloat(key, float(loss))
-        pipe.expire(key, 3600)  # 1 hour TTL
+        pipe.expire(key, self.config.loss_window_seconds)
         await pipe.execute()
 
     async def trip(self, bot_id: UUID, reason: TripReason) -> None:
@@ -216,6 +244,7 @@ class CircuitBreaker:
             now,
             ex=self.config.cooldown_seconds,
         )
+        pipe.delete(f"{HALF_OPEN_COUNT_KEY}:{bot_key}")
         await pipe.execute()
 
         logger.warning(
@@ -237,6 +266,7 @@ class CircuitBreaker:
         pipe.set(f"{STATE_KEY}:{bot_key}", CircuitState.CLOSED.value)
         pipe.delete(f"{TRIP_REASON_KEY}:{bot_key}")
         pipe.delete(f"{COOLDOWN_KEY}:{bot_key}")
+        pipe.delete(f"{HALF_OPEN_COUNT_KEY}:{bot_key}")
         await pipe.execute()
 
         logger.info(f"Circuit breaker RESET for bot {bot_id}")
@@ -251,7 +281,14 @@ class CircuitBreaker:
             bot_id: Bot to transition
         """
         bot_key = str(bot_id)
-        await self.redis.set(f"{STATE_KEY}:{bot_key}", CircuitState.HALF_OPEN.value)
+        pipe = self.redis.pipeline()
+        pipe.set(f"{STATE_KEY}:{bot_key}", CircuitState.HALF_OPEN.value)
+        pipe.set(
+            f"{HALF_OPEN_COUNT_KEY}:{bot_key}",
+            0,
+            ex=self.config.order_rate_window_seconds,
+        )
+        await pipe.execute()
 
         logger.info(f"Circuit breaker HALF-OPEN for bot {bot_id}")
 
@@ -385,6 +422,11 @@ class CircuitBreaker:
         """Get total loss for the last hour."""
         loss = await self.redis.get(f"{LOSS_KEY}:{bot_key}")
         return Decimal(str(loss)) if loss else Decimal("0")
+
+    async def _get_half_open_count(self, bot_key: str) -> int:
+        """Get half-open order count."""
+        count = await self.redis.get(f"{HALF_OPEN_COUNT_KEY}:{bot_key}")
+        return int(count) if count else 0
 
 
 async def create_circuit_breaker(
