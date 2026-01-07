@@ -146,7 +146,7 @@ async def rate_limit_auth(
         HTTPException 429: If rate limit exceeded.
     """
     settings = get_settings()
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _get_client_ip(request)
     key = f"rate_limit:auth:{client_ip}"
 
     limiter = RateLimiter(redis_client)
@@ -171,3 +171,21 @@ async def rate_limit_auth(
 
 # Type alias for dependency injection
 RateLimitAuth = Annotated[None, Depends(rate_limit_auth)]
+
+
+def _get_client_ip(request: Request) -> str:
+    """Resolve client IP address, honoring proxy headers when present."""
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        first = forwarded_for.split(",", 1)[0].strip()
+        if first:
+            return first
+
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+
+    if request.client:
+        return request.client.host
+
+    return "unknown"
