@@ -16,6 +16,7 @@ from celery import Celery
 from celery.signals import worker_ready
 from celery.schedules import crontab
 
+from api.core.config import get_settings
 from bot.notifications import get_notifier
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ celery_app = Celery(
 )
 
 # Celery configuration
+settings = get_settings()
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
@@ -35,12 +37,13 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     task_track_started=True,
-    task_time_limit=3600,  # 1 hour max per task (for long-running bots)
-    task_soft_time_limit=3500,  # Soft limit to allow graceful shutdown
-    worker_prefetch_multiplier=1,
-    task_acks_late=True,
-    worker_concurrency=1,
-    worker_pool="solo",
+    task_time_limit=settings.celery_task_time_limit,  # 1 hour max per task (default)
+    task_soft_time_limit=settings.celery_task_soft_time_limit,  # Soft limit for graceful shutdown
+    worker_prefetch_multiplier=settings.celery_worker_prefetch_multiplier,
+    task_acks_late=settings.celery_task_acks_late,
+    task_reject_on_worker_lost=settings.celery_task_reject_on_worker_lost,
+    worker_concurrency=settings.celery_worker_concurrency,
+    worker_pool=settings.celery_worker_pool,
 )
 
 # Beat schedule for periodic tasks
@@ -316,6 +319,7 @@ async def _start_bot_async(
             api_key=api_key,
             api_secret=api_secret,
             testnet=is_testnet,
+            timeout_ms=settings.exchange_timeout_ms,
         )
         await connector.connect()
 
@@ -346,6 +350,7 @@ async def _start_bot_async(
             exchange=connector,
             db_session=db,
             notifier=notifier,
+            exchange_timeout_seconds=settings.exchange_timeout_ms / 1000,
         )
 
         # Load existing orders
@@ -671,9 +676,26 @@ async def _tick_bot_async(bot_id: str, bot_data: dict[str, Any]) -> None:
     # Sync open orders before strategy calculation
     open_orders = await order_manager.get_open_orders(UUID(bot_id))
     for order in open_orders:
-        await order_manager.sync_order_status(order.id)
+        try:
+            if settings.order_sync_timeout_seconds:
+                await asyncio.wait_for(
+                    order_manager.sync_order_status(order.id),
+                    timeout=settings.order_sync_timeout_seconds,
+                )
+            else:
+                await order_manager.sync_order_status(order.id)
+        except asyncio.TimeoutError:
+            logger.warning(f"Order sync timed out for {order.id}")
+        except Exception as e:
+            logger.warning(f"Order sync failed for {order.id}: {e}")
 
-    await engine._tick()
+    if settings.bot_tick_timeout_seconds:
+        await asyncio.wait_for(
+            engine._tick(),
+            timeout=settings.bot_tick_timeout_seconds,
+        )
+    else:
+        await engine._tick()
 
     if engine.strategy.should_stop():
         logger.info(f"Bot {bot_id} requested stop by strategy")

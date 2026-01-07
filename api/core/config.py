@@ -45,9 +45,24 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 5  # requests per minute for auth endpoints
     rate_limit_window: int = 60  # window in seconds
 
+    # Exchange timeouts (seconds / milliseconds)
+    exchange_timeout_ms: int = 10000  # CCXT request timeout in ms
+    exchange_rest_timeout_seconds: int = 10  # REST timeouts for WS listen-key ops
+
+    # Bot execution timeouts
+    bot_tick_timeout_seconds: int = 15
+    order_sync_timeout_seconds: int = 10
+
     # Celery
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/0"
+    celery_worker_concurrency: int = 1
+    celery_worker_pool: str = "solo"
+    celery_worker_prefetch_multiplier: int = 1
+    celery_task_time_limit: int = 3600
+    celery_task_soft_time_limit: int = 3500
+    celery_task_acks_late: bool = True
+    celery_task_reject_on_worker_lost: bool = True
 
     # Circuit Breaker
     circuit_breaker_orders_limit: int = 50  # Max orders per minute

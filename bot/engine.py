@@ -12,6 +12,7 @@ from decimal import Decimal, ROUND_DOWN
 from typing import Callable, Protocol
 from uuid import UUID
 
+from api.core.config import get_settings
 from bot.circuit_breaker import CircuitBreaker
 from bot.exchange.connector import ExchangeConnector
 from bot.notifications import Notifier, NullNotifier
@@ -74,6 +75,8 @@ class BotEngine:
         on_order_filled: Callable[[ManagedOrder], None] | None = None,
         notifier: Notifier | None = None,
         tick_interval: float = 1.0,
+        exchange_timeout_seconds: float | None = None,
+        tick_timeout_seconds: float | None = None,
     ) -> None:
         """
         Initialize bot engine.
@@ -95,6 +98,17 @@ class BotEngine:
         self.on_order_filled = on_order_filled
         self.notifier = notifier or NullNotifier()
         self.tick_interval = tick_interval
+        settings = get_settings()
+        self.exchange_timeout_seconds = (
+            exchange_timeout_seconds
+            if exchange_timeout_seconds is not None
+            else settings.exchange_timeout_ms / 1000
+        )
+        self.tick_timeout_seconds = (
+            tick_timeout_seconds
+            if tick_timeout_seconds is not None
+            else settings.bot_tick_timeout_seconds
+        )
 
         # State
         self._state = BotState()
@@ -129,7 +143,13 @@ class BotEngine:
 
             # Main loop
             while self._state.is_running:
-                await self._tick()
+                if self.tick_timeout_seconds:
+                    await asyncio.wait_for(
+                        self._tick(),
+                        timeout=self.tick_timeout_seconds,
+                    )
+                else:
+                    await self._tick()
                 await asyncio.sleep(self.tick_interval)
 
         except Exception as e:
@@ -186,9 +206,22 @@ class BotEngine:
                 return
 
         # Get current price
-        ticker = await self.exchange.fetch_ticker(self.config.symbol)
-        current_price = Decimal(str(ticker["last"]))
-        self._state.current_price = current_price
+        try:
+            if self.exchange_timeout_seconds:
+                ticker = await asyncio.wait_for(
+                    self.exchange.fetch_ticker(self.config.symbol),
+                    timeout=self.exchange_timeout_seconds,
+                )
+            else:
+                ticker = await self.exchange.fetch_ticker(self.config.symbol)
+            current_price = Decimal(str(ticker["last"]))
+            self._state.current_price = current_price
+        except asyncio.TimeoutError:
+            logger.warning(f"Ticker fetch timed out for {self.config.symbol}")
+            return
+        except Exception as e:
+            logger.warning(f"Ticker fetch failed for {self.config.symbol}: {e}")
+            return
 
         # Get open orders
         open_orders = await self._get_open_orders()
@@ -201,7 +234,15 @@ class BotEngine:
 
         balance = None
         try:
-            balance = await self.exchange.fetch_balance()
+            if self.exchange_timeout_seconds:
+                balance = await asyncio.wait_for(
+                    self.exchange.fetch_balance(),
+                    timeout=self.exchange_timeout_seconds,
+                )
+            else:
+                balance = await self.exchange.fetch_balance()
+        except asyncio.TimeoutError:
+            logger.warning("Balance fetch timed out for checks")
         except Exception as e:
             logger.warning(f"Failed to fetch balance for checks: {e}")
 
@@ -210,19 +251,37 @@ class BotEngine:
         step_size = None
         if self.exchange:
             try:
-                min_notional = await self.exchange.get_min_notional(
-                    self.config.symbol
-                )
+                if self.exchange_timeout_seconds:
+                    min_notional = await asyncio.wait_for(
+                        self.exchange.get_min_notional(self.config.symbol),
+                        timeout=self.exchange_timeout_seconds,
+                    )
+                else:
+                    min_notional = await self.exchange.get_min_notional(
+                        self.config.symbol
+                    )
             except Exception as e:
                 logger.warning(f"Failed to fetch min_notional: {e}")
             if hasattr(self.exchange, "get_min_qty"):
                 try:
-                    min_qty = await self.exchange.get_min_qty(self.config.symbol)
+                    if self.exchange_timeout_seconds:
+                        min_qty = await asyncio.wait_for(
+                            self.exchange.get_min_qty(self.config.symbol),
+                            timeout=self.exchange_timeout_seconds,
+                        )
+                    else:
+                        min_qty = await self.exchange.get_min_qty(self.config.symbol)
                 except Exception as e:
                     logger.warning(f"Failed to fetch min_qty: {e}")
             if hasattr(self.exchange, "get_step_size"):
                 try:
-                    step_size = await self.exchange.get_step_size(self.config.symbol)
+                    if self.exchange_timeout_seconds:
+                        step_size = await asyncio.wait_for(
+                            self.exchange.get_step_size(self.config.symbol),
+                            timeout=self.exchange_timeout_seconds,
+                        )
+                    else:
+                        step_size = await self.exchange.get_step_size(self.config.symbol)
                 except Exception as e:
                     logger.warning(f"Failed to fetch step size: {e}")
 

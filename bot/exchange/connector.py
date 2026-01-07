@@ -44,6 +44,7 @@ class ExchangeConnector(ABC):
         api_key: str,
         api_secret: str,
         testnet: bool = False,
+        timeout_ms: int | None = None,
     ) -> None:
         """
         Initialize exchange connector.
@@ -58,6 +59,7 @@ class ExchangeConnector(ABC):
         self.api_key = api_key
         self.api_secret = api_secret
         self.testnet = testnet
+        self.timeout_ms = timeout_ms
         self._connected = False
 
     @property
@@ -237,8 +239,9 @@ class CCXTConnector(ExchangeConnector):
         api_key: str,
         api_secret: str,
         testnet: bool = False,
+        timeout_ms: int | None = None,
     ) -> None:
-        super().__init__(exchange_id, api_key, api_secret, testnet)
+        super().__init__(exchange_id, api_key, api_secret, testnet, timeout_ms)
         self._exchange: Any = None  # CCXT exchange instance
 
     async def connect(self) -> None:
@@ -247,12 +250,15 @@ class CCXTConnector(ExchangeConnector):
             import ccxt.async_support as ccxt
 
             exchange_class = getattr(ccxt, self.exchange_id)
-            self._exchange = exchange_class({
+            options: dict[str, Any] = {
                 "apiKey": self.api_key,
                 "secret": self.api_secret,
                 "sandbox": self.testnet,
                 "enableRateLimit": True,
-            })
+            }
+            if self.timeout_ms:
+                options["timeout"] = self.timeout_ms
+            self._exchange = exchange_class(options)
 
             # Load markets
             await self._exchange.load_markets()

@@ -31,6 +31,7 @@ class WebSocketConfig:
     ping_interval: int = 30
     reconnect_delay: int = 5
     max_reconnect_attempts: int = 10
+    rest_timeout_seconds: int = 10
 
 
 class WebSocketHandler(ABC):
@@ -186,7 +187,8 @@ class BinanceWebSocket(WebSocketHandler):
 
     async def connect(self) -> None:
         """Connect to Binance user data stream."""
-        self._session = aiohttp.ClientSession()
+        timeout = aiohttp.ClientTimeout(total=self.config.rest_timeout_seconds)
+        self._session = aiohttp.ClientSession(timeout=timeout)
 
         # Get listen key from REST API
         self._listen_key = await self._get_listen_key()
@@ -339,7 +341,8 @@ class BybitWebSocket(WebSocketHandler):
 
     async def connect(self) -> None:
         """Connect to Bybit private WebSocket."""
-        self._session = aiohttp.ClientSession()
+        timeout = aiohttp.ClientTimeout(total=self.config.rest_timeout_seconds)
+        self._session = aiohttp.ClientSession(timeout=timeout)
         self._ws = await self._session.ws_connect(self.ws_url)
         self._running = True
 
@@ -455,10 +458,14 @@ class WebSocketManager:
             api_secret: API secret
             testnet: Use testnet endpoint
         """
+        from api.core.config import get_settings
+
+        settings = get_settings()
         config = WebSocketConfig(
             api_key=api_key,
             api_secret=api_secret,
             testnet=testnet,
+            rest_timeout_seconds=settings.exchange_rest_timeout_seconds,
         )
 
         if exchange_id == "binance":

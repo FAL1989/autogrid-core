@@ -190,6 +190,7 @@ class OrderManager:
         notifier: Notifier | None = None,
         base_retry_delay: float = 1.0,
         max_retry_delay: float = 30.0,
+        exchange_timeout_seconds: float | None = None,
     ) -> None:
         """
         Initialize OrderManager.
@@ -207,6 +208,7 @@ class OrderManager:
         self.notifier = notifier or NullNotifier()
         self.base_retry_delay = base_retry_delay
         self.max_retry_delay = max_retry_delay
+        self.exchange_timeout_seconds = exchange_timeout_seconds
 
         # In-memory order cache (keyed by order ID)
         self._orders: dict[UUID, ManagedOrder] = {}
@@ -296,9 +298,15 @@ class OrderManager:
 
         try:
             if order.exchange_id:
-                success = await self.exchange.cancel_order(
-                    order.exchange_id, order.symbol
-                )
+                if self.exchange_timeout_seconds:
+                    success = await asyncio.wait_for(
+                        self.exchange.cancel_order(order.exchange_id, order.symbol),
+                        timeout=self.exchange_timeout_seconds,
+                    )
+                else:
+                    success = await self.exchange.cancel_order(
+                        order.exchange_id, order.symbol
+                    )
                 if success:
                     self._transition_state(order, OrderState.CANCELLED)
                     await self._persist_order(order)
@@ -334,7 +342,13 @@ class OrderManager:
             return None
 
         try:
-            result = await self.exchange.fetch_order(order.exchange_id, order.symbol)
+            if self.exchange_timeout_seconds:
+                result = await asyncio.wait_for(
+                    self.exchange.fetch_order(order.exchange_id, order.symbol),
+                    timeout=self.exchange_timeout_seconds,
+                )
+            else:
+                result = await self.exchange.fetch_order(order.exchange_id, order.symbol)
             await self._process_exchange_update(order, result)
             return order
 
@@ -502,6 +516,17 @@ class OrderManager:
 
     async def _submit_to_exchange(self, order: ManagedOrder) -> dict[str, Any]:
         """Submit order to exchange."""
+        if self.exchange_timeout_seconds:
+            return await asyncio.wait_for(
+                self.exchange.create_order(
+                    symbol=order.symbol,
+                    order_type=order.order_type,
+                    side=order.side,
+                    amount=float(order.quantity),
+                    price=float(order.price) if order.price else None,
+                ),
+                timeout=self.exchange_timeout_seconds,
+            )
         return await self.exchange.create_order(
             symbol=order.symbol,
             order_type=order.order_type,
