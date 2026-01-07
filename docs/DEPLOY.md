@@ -39,6 +39,21 @@ curl -I http://localhost:8000
 curl -I http://localhost:8000/docs
 ```
 
-## 4) Rollback
+## 4) Release Governance
+
+Use the core checklist and changelog to keep releases consistent:
+- `CHANGELOG.md`
+- `docs/RELEASE_CHECKLIST.md`
+
+Tagging:
+```bash
+git tag -a vX.Y.Z -m "AutoGrid Core vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+If the cloud deploy consumes core images, publish new image tags and update the
+cloud config to match.
+
+## 5) Rollback
 
 If deploy fails, checkout the previous commit/tag and re-run the compose up.

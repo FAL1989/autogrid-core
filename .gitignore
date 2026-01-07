@@ -92,4 +92,6 @@ CLAUDE.md
 PROMPT_PROJETO.md
 
 .claude
-/docs
+/docs/*
+!/docs/DEPLOY.md
+!/docs/RELEASE_CHECKLIST.md
