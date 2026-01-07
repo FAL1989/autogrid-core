@@ -81,8 +81,12 @@ autogrid-core/
 
 ## Development
 
+`make install` creates a local `.venv` and installs dependencies.
+You can activate it, but the Makefile already uses `.venv` directly.
+
 ```bash
 make install
+source .venv/bin/activate
 make dev
 make test
 make lint

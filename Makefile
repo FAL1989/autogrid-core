@@ -4,6 +4,10 @@
 
 .PHONY: help install dev test lint format build clean docker-up docker-down migrate
 
+VENV ?= .venv
+PYTHON := $(VENV)/bin/python
+PIP := $(VENV)/bin/pip
+
 # Default target
 help:
 	@echo "AutoGrid Development Commands"
@@ -32,9 +36,13 @@ help:
 
 install: install-python
 
-install-python:
+$(PYTHON):
+	python3 -m venv $(VENV)
+	$(PIP) install -U pip
+
+install-python: $(PYTHON)
 	@echo "Installing Python dependencies..."
-	pip install -r requirements.txt
+	$(PIP) install -r requirements.txt
 
 # ===========================================
 # Development
@@ -46,23 +54,23 @@ dev: docker-up
 	@echo "API Docs: http://localhost:8000/docs"
 
 dev-api:
-	uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+	$(PYTHON) -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 
 # ===========================================
 # Testing
 # ===========================================
 
 test:
-	pytest tests/ -v --cov=api --cov=bot --cov-report=html --cov-report=term
+	$(PYTHON) -m pytest tests/ -v --cov=api --cov=bot --cov-report=html --cov-report=term
 
 test-unit:
-	pytest tests/unit/ -v
+	$(PYTHON) -m pytest tests/unit/ -v
 
 test-integration:
-	pytest tests/integration/ -v
+	$(PYTHON) -m pytest tests/integration/ -v
 
 test-watch:
-	pytest tests/ -v --watch
+	$(PYTHON) -m pytest tests/ -v --watch
 
 # ===========================================
 # Linting & Formatting
@@ -72,21 +80,21 @@ lint: lint-python
 
 lint-python:
 	@echo "Running Python linters..."
-	black --check .
-	isort --check-only .
-	flake8 api/ bot/ tests/
-	mypy api/ bot/
+	$(PYTHON) -m black --check .
+	$(PYTHON) -m isort --check-only .
+	$(PYTHON) -m flake8 api/ bot/ tests/
+	$(PYTHON) -m mypy api/ bot/
 
 format: format-python
 
 format-python:
 	@echo "Formatting Python code..."
-	black .
-	isort .
+	$(PYTHON) -m black .
+	$(PYTHON) -m isort .
 
 typecheck:
 	@echo "Running type checks..."
-	mypy api/ bot/
+	$(PYTHON) -m mypy api/ bot/
 
 # ===========================================
 # Build
@@ -121,14 +129,14 @@ docker-clean:
 # ===========================================
 
 migrate:
-	alembic upgrade head
+	$(PYTHON) -m alembic upgrade head
 
 migrate-new:
 	@read -p "Migration name: " name; \
-	alembic revision --autogenerate -m "$$name"
+	$(PYTHON) -m alembic revision --autogenerate -m "$$name"
 
 migrate-down:
-	alembic downgrade -1
+	$(PYTHON) -m alembic downgrade -1
 
 db-shell:
 	docker-compose exec postgres psql -U postgres -d autogrid
