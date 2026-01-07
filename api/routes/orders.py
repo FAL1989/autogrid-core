@@ -10,7 +10,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.database import get_db
@@ -45,10 +45,7 @@ class OrderResponse(BaseModel):
     updated_at: datetime
     filled_at: datetime | None
 
-    class Config:
-        """Pydantic config."""
-
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class OrderListResponse(BaseModel):
@@ -75,10 +72,7 @@ class TradeResponse(BaseModel):
     realized_pnl: float | None
     timestamp: datetime
 
-    class Config:
-        """Pydantic config."""
-
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TradeListResponse(BaseModel):

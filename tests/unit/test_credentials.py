@@ -16,9 +16,13 @@ class TestCredentialService:
     """Tests for CredentialService."""
 
     @pytest.fixture
-    def mock_db(self) -> AsyncMock:
+    def mock_db(self) -> MagicMock:
         """Create mock database session."""
-        return AsyncMock()
+        mock = MagicMock()
+        mock.add = MagicMock()
+        mock.flush = AsyncMock()
+        mock.refresh = AsyncMock()
+        return mock
 
     @pytest.fixture
     def mock_encryption(self) -> MagicMock:
@@ -30,7 +34,7 @@ class TestCredentialService:
 
     @pytest.mark.asyncio
     async def test_create_validates_credentials(
-        self, mock_db: AsyncMock, mock_encryption: MagicMock
+        self, mock_db: MagicMock, mock_encryption: MagicMock
     ) -> None:
         """Create should validate credentials with exchange."""
         with patch(
@@ -63,7 +67,7 @@ class TestCredentialService:
 
     @pytest.mark.asyncio
     async def test_create_fails_without_trade_permission(
-        self, mock_db: AsyncMock, mock_encryption: MagicMock
+        self, mock_db: MagicMock, mock_encryption: MagicMock
     ) -> None:
         """Create should fail if trade permission is missing."""
         with patch(
@@ -96,7 +100,7 @@ class TestCredentialService:
 
     @pytest.mark.asyncio
     async def test_create_fails_with_invalid_credentials(
-        self, mock_db: AsyncMock, mock_encryption: MagicMock
+        self, mock_db: MagicMock, mock_encryption: MagicMock
     ) -> None:
         """Create should fail if credentials are invalid."""
         with patch(
@@ -130,7 +134,7 @@ class TestCredentialService:
 
     @pytest.mark.asyncio
     async def test_create_encrypts_keys(
-        self, mock_db: AsyncMock, mock_encryption: MagicMock
+        self, mock_db: MagicMock, mock_encryption: MagicMock
     ) -> None:
         """Create should encrypt API keys before storage."""
         with patch(
@@ -164,7 +168,7 @@ class TestCredentialService:
 
     @pytest.mark.asyncio
     async def test_create_allows_withdraw_with_warning(
-        self, mock_db: AsyncMock, mock_encryption: MagicMock
+        self, mock_db: MagicMock, mock_encryption: MagicMock
     ) -> None:
         """Create should allow credentials with withdraw permission (but mark as unsafe)."""
         with patch(

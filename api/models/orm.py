@@ -5,7 +5,7 @@ Database models matching the schema defined in db/init.sql.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, text
@@ -13,6 +13,11 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from api.core.database import Base
+
+
+def utcnow() -> datetime:
+    """Timezone-aware UTC timestamp for ORM defaults."""
+    return datetime.now(timezone.utc)
 
 
 class User(Base):
@@ -55,7 +60,7 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("NOW()"),
-        onupdate=datetime.utcnow,
+        onupdate=utcnow,
     )
 
     # Relationships
@@ -120,7 +125,7 @@ class ExchangeCredential(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("NOW()"),
-        onupdate=datetime.utcnow,
+        onupdate=utcnow,
     )
 
     # Relationships
@@ -200,7 +205,7 @@ class Bot(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("NOW()"),
-        onupdate=datetime.utcnow,
+        onupdate=utcnow,
     )
 
     # Relationships
@@ -393,7 +398,7 @@ class Order(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("NOW()"),
-        onupdate=datetime.utcnow,
+        onupdate=utcnow,
     )
     filled_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
@@ -470,7 +475,7 @@ class Trade(Base):
     # Composite primary key for TimescaleDB hypertable
     __table_args__ = (
         {
-            "timescaledb_hypertable": {"time_column": "timestamp"},
+            "info": {"timescaledb_hypertable": {"time_column": "timestamp"}},
             "extend_existing": True,
         },
     )
@@ -532,7 +537,7 @@ class BotMetrics(Base):
     # Composite primary key for TimescaleDB hypertable
     __table_args__ = (
         {
-            "timescaledb_hypertable": {"time_column": "timestamp"},
+            "info": {"timescaledb_hypertable": {"time_column": "timestamp"}},
             "extend_existing": True,
         },
     )

@@ -4,7 +4,7 @@ DCA (Dollar Cost Averaging) Strategy
 Buys at regular intervals or on price drops to reduce average entry price.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Literal
 
@@ -128,7 +128,7 @@ class DCAStrategy(BaseStrategy):
         if self._last_buy_time is None:
             return True
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         intervals = {
             "hourly": timedelta(hours=1),
             "daily": timedelta(days=1),
@@ -206,7 +206,7 @@ class DCAStrategy(BaseStrategy):
         if order.side == "buy":
             self._total_spent += fill_price * order.quantity
             self._total_quantity += order.quantity
-            self._last_buy_time = datetime.utcnow()
+            self._last_buy_time = datetime.now(timezone.utc)
             # Note: Don't reset _highest_price here to allow drop detection to work properly
 
         else:  # sell

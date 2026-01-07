@@ -4,13 +4,13 @@ Pydantic Schemas
 Shared data models for API requests and responses.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 # ===========================================
@@ -68,7 +68,7 @@ class OrderStatus(str, Enum):
 class TimestampMixin(BaseModel):
     """Mixin for created_at timestamp."""
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ===========================================
@@ -95,8 +95,7 @@ class UserResponse(UserBase, TimestampMixin):
     plan: UserPlan = UserPlan.FREE
     telegram_chat_id: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ===========================================
@@ -120,8 +119,7 @@ class ExchangeCredentialResponse(BaseModel):
     is_valid: bool
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ===========================================
@@ -154,8 +152,7 @@ class OrderResponse(OrderBase, TimestampMixin):
     filled_at: datetime | None = None
     fee: Decimal | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ===========================================

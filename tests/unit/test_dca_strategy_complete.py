@@ -10,7 +10,7 @@ Comprehensive tests covering:
 - State persistence
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -196,7 +196,7 @@ class TestDCATimeBased:
             interval="hourly",
         )
         # Simulate last buy 30 minutes ago
-        strategy._last_buy_time = datetime.utcnow() - timedelta(minutes=30)
+        strategy._last_buy_time = datetime.now(timezone.utc) - timedelta(minutes=30)
 
         assert strategy._should_buy_by_time() is False
 
@@ -209,7 +209,7 @@ class TestDCATimeBased:
             interval="hourly",
         )
         # Simulate last buy 61 minutes ago
-        strategy._last_buy_time = datetime.utcnow() - timedelta(hours=1, minutes=1)
+        strategy._last_buy_time = datetime.now(timezone.utc) - timedelta(hours=1, minutes=1)
 
         assert strategy._should_buy_by_time() is True
 
@@ -222,7 +222,7 @@ class TestDCATimeBased:
             interval="daily",
         )
         # Simulate last buy 12 hours ago
-        strategy._last_buy_time = datetime.utcnow() - timedelta(hours=12)
+        strategy._last_buy_time = datetime.now(timezone.utc) - timedelta(hours=12)
 
         assert strategy._should_buy_by_time() is False
 
@@ -235,7 +235,7 @@ class TestDCATimeBased:
             interval="daily",
         )
         # Simulate last buy 25 hours ago
-        strategy._last_buy_time = datetime.utcnow() - timedelta(hours=25)
+        strategy._last_buy_time = datetime.now(timezone.utc) - timedelta(hours=25)
 
         assert strategy._should_buy_by_time() is True
 
@@ -248,7 +248,7 @@ class TestDCATimeBased:
             interval="weekly",
         )
         # Simulate last buy 3 days ago
-        strategy._last_buy_time = datetime.utcnow() - timedelta(days=3)
+        strategy._last_buy_time = datetime.now(timezone.utc) - timedelta(days=3)
 
         assert strategy._should_buy_by_time() is False
 
@@ -261,7 +261,7 @@ class TestDCATimeBased:
             interval="weekly",
         )
         # Simulate last buy 8 days ago
-        strategy._last_buy_time = datetime.utcnow() - timedelta(days=8)
+        strategy._last_buy_time = datetime.now(timezone.utc) - timedelta(days=8)
 
         assert strategy._should_buy_by_time() is True
 
@@ -635,7 +635,7 @@ class TestDCACalculateOrders:
             interval="hourly",
             trigger_drop_percent=Decimal("5"),
         )
-        strategy._last_buy_time = datetime.utcnow()  # Recent buy
+        strategy._last_buy_time = datetime.now(timezone.utc)  # Recent buy
         strategy._highest_price = Decimal("100")
 
         # Time trigger: blocked (recent buy)
