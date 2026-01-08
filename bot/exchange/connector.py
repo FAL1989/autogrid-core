@@ -260,6 +260,9 @@ class CCXTConnector(ExchangeConnector):
                 options["timeout"] = self.timeout_ms
             self._exchange = exchange_class(options)
 
+            if self.testnet and hasattr(self._exchange, "set_sandbox_mode"):
+                self._exchange.set_sandbox_mode(True)
+
             # Load markets
             await self._exchange.load_markets()
 
@@ -436,6 +439,9 @@ class CCXTConnector(ExchangeConnector):
                 "sandbox": self.testnet,
                 "enableRateLimit": True,
             })
+
+            if self.testnet and hasattr(self._exchange, "set_sandbox_mode"):
+                self._exchange.set_sandbox_mode(True)
 
             # Load markets
             await self._exchange.load_markets()
