@@ -6,6 +6,7 @@ Profits from sideways market volatility.
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -60,6 +61,12 @@ class GridStrategy(BaseStrategy):
         lower_price: Decimal,
         upper_price: Decimal,
         grid_count: int,
+        dynamic_range_enabled: bool = False,
+        atr_period: int = 14,
+        atr_multiplier: Decimal | None = None,
+        atr_timeframe: str = "1h",
+        cooldown_minutes: int = 30,
+        recenter_minutes: int = 360,
     ) -> None:
         """
         Initialize Grid Strategy.
@@ -77,10 +84,27 @@ class GridStrategy(BaseStrategy):
             raise ValueError("lower_price must be less than upper_price")
         if grid_count < 2:
             raise ValueError("grid_count must be at least 2")
+        if atr_period < 2:
+            raise ValueError("atr_period must be at least 2")
+        if cooldown_minutes < 0:
+            raise ValueError("cooldown_minutes must be >= 0")
+        if recenter_minutes < 0:
+            raise ValueError("recenter_minutes must be >= 0")
+
+        if atr_multiplier is None:
+            atr_multiplier = Decimal("1.5")
+        if atr_multiplier <= 0:
+            raise ValueError("atr_multiplier must be > 0")
 
         self.lower_price = lower_price
         self.upper_price = upper_price
         self.grid_count = grid_count
+        self.dynamic_range_enabled = dynamic_range_enabled
+        self.atr_period = atr_period
+        self.atr_multiplier = atr_multiplier
+        self.atr_timeframe = atr_timeframe
+        self.cooldown_minutes = cooldown_minutes
+        self.recenter_minutes = recenter_minutes
 
         # Calculate grid parameters
         self.grid_spacing = (upper_price - lower_price) / Decimal(grid_count)
@@ -96,6 +120,10 @@ class GridStrategy(BaseStrategy):
 
         # Current price for stop conditions
         self._current_price: Decimal = Decimal("0")
+        self._last_regrid_at: datetime | None = None
+        self._last_recenter_at: datetime | None = (
+            datetime.now(timezone.utc) if dynamic_range_enabled else None
+        )
 
     def _initialize_grid_prices(self) -> None:
         """Calculate all grid price levels."""
@@ -107,6 +135,40 @@ class GridStrategy(BaseStrategy):
         """Initialize grid level tracking."""
         for i, price in enumerate(self._grid_prices):
             self._levels[i] = GridLevel(price=price, index=i)
+
+    def _rebuild_grid(self, lower_price: Decimal, upper_price: Decimal) -> None:
+        """Rebuild grid levels and preserve existing positions."""
+        previous_levels = list(self._levels.values())
+
+        self.lower_price = lower_price
+        self.upper_price = upper_price
+        self.grid_spacing = (upper_price - lower_price) / Decimal(self.grid_count)
+        self.amount_per_grid = self.investment / Decimal(self.grid_count)
+
+        self._grid_prices = []
+        self._initialize_grid_prices()
+        self._levels = {}
+        self._initialize_levels()
+
+        for level in previous_levels:
+            if level.position_qty <= Decimal("0"):
+                continue
+            anchor_price = level.avg_buy_price or level.price
+            target_index = self._find_nearest_level_index(anchor_price)
+            target_level = self._levels[target_index]
+
+            total_qty = target_level.position_qty + level.position_qty
+            if total_qty > 0:
+                target_avg = target_level.avg_buy_price or Decimal("0")
+                level_avg = level.avg_buy_price or level.price
+                target_level.avg_buy_price = (
+                    (target_avg * target_level.position_qty)
+                    + (level_avg * level.position_qty)
+                ) / total_qty
+                target_level.position_qty = total_qty
+
+            target_level.buy_order_id = target_level.buy_order_id or level.buy_order_id
+            target_level.sell_order_id = target_level.sell_order_id or level.sell_order_id
 
     def calculate_orders(
         self,
@@ -265,6 +327,67 @@ class GridStrategy(BaseStrategy):
                 return i
         return None
 
+    def _find_nearest_level_index(self, price: Decimal) -> int:
+        """Find closest grid level index for a given price."""
+        return min(
+            range(len(self._grid_prices)),
+            key=lambda i: abs(self._grid_prices[i] - price),
+        )
+
+    def dynamic_regrid_due(
+        self,
+        current_price: Decimal,
+        now: datetime | None = None,
+    ) -> tuple[bool, str]:
+        """Check whether dynamic grid should recenter or regrid."""
+        if not self.dynamic_range_enabled:
+            return False, "disabled"
+
+        now = now or datetime.now(timezone.utc)
+        if self._last_regrid_at:
+            cooldown = timedelta(minutes=self.cooldown_minutes)
+            if cooldown > timedelta(0) and (now - self._last_regrid_at) < cooldown:
+                return False, "cooldown"
+
+        if current_price < self.lower_price or current_price > self.upper_price:
+            return True, "out_of_range"
+
+        if self.recenter_minutes > 0 and self._last_recenter_at:
+            recenter_delta = timedelta(minutes=self.recenter_minutes)
+            if (now - self._last_recenter_at) >= recenter_delta:
+                return True, "recenter"
+
+        return False, "in_range"
+
+    def compute_dynamic_bounds(
+        self,
+        current_price: Decimal,
+        atr_value: Decimal,
+    ) -> tuple[Decimal, Decimal]:
+        """Compute dynamic bounds around current price using ATR."""
+        if atr_value <= Decimal("0"):
+            raise ValueError("ATR must be > 0")
+        half_range = atr_value * self.atr_multiplier
+        lower = current_price - half_range
+        upper = current_price + half_range
+        if lower <= Decimal("0"):
+            lower = Decimal("0.00000001")
+        if lower >= upper:
+            raise ValueError("Computed bounds are invalid")
+        return lower, upper
+
+    def apply_dynamic_bounds(
+        self,
+        lower_price: Decimal,
+        upper_price: Decimal,
+        now: datetime | None = None,
+    ) -> None:
+        """Apply new bounds and rebuild grid state."""
+        self._rebuild_grid(lower_price, upper_price)
+        now = now or datetime.now(timezone.utc)
+        self._last_regrid_at = now
+        self._last_recenter_at = now
+
     def should_stop(self) -> bool:
         """
         Check if strategy should stop.
@@ -353,5 +476,39 @@ class GridStrategy(BaseStrategy):
             "levels_with_position": sum(
                 1 for level in self._levels.values() if level.has_position()
             ),
+            "dynamic_range_enabled": self.dynamic_range_enabled,
+            "atr_period": self.atr_period,
+            "atr_multiplier": float(self.atr_multiplier),
+            "atr_timeframe": self.atr_timeframe,
+            "cooldown_minutes": self.cooldown_minutes,
+            "recenter_minutes": self.recenter_minutes,
         })
         return base_stats
+
+
+def calculate_atr(ohlcv: list[list], period: int) -> Decimal:
+    """Calculate ATR from OHLCV data."""
+    if period < 2:
+        raise ValueError("period must be at least 2")
+    if len(ohlcv) < period + 1:
+        raise ValueError("Not enough candles for ATR")
+
+    true_ranges: list[Decimal] = []
+    prev_close = Decimal(str(ohlcv[0][4]))
+
+    for candle in ohlcv[1:]:
+        high = Decimal(str(candle[2]))
+        low = Decimal(str(candle[3]))
+        close = Decimal(str(candle[4]))
+        tr = max(
+            high - low,
+            abs(high - prev_close),
+            abs(low - prev_close),
+        )
+        true_ranges.append(tr)
+        prev_close = close
+
+    if len(true_ranges) < period:
+        raise ValueError("Not enough true range values")
+
+    return sum(true_ranges[-period:]) / Decimal(period)

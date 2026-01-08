@@ -8,6 +8,7 @@ Manages strategy execution, order placement, and position tracking.
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_DOWN
 from typing import Callable, Protocol
 from uuid import UUID
@@ -225,6 +226,7 @@ class BotEngine:
 
         # Get open orders
         open_orders = await self._get_open_orders()
+        open_orders = await self._maybe_update_dynamic_grid(current_price, open_orders)
 
         # Let strategy decide on orders
         new_orders = self.strategy.calculate_orders(
@@ -323,6 +325,89 @@ class BotEngine:
                 for mo in managed_orders
             ]
         return [o for o in self._orders if o.status == "open"]
+
+    async def _maybe_update_dynamic_grid(
+        self,
+        current_price: Decimal,
+        open_orders: list[Order],
+    ) -> list[Order]:
+        """Update dynamic grid bounds when enabled and due."""
+        from bot.strategies.grid import GridStrategy, calculate_atr
+
+        if not isinstance(self.strategy, GridStrategy):
+            return open_orders
+        if not self.strategy.dynamic_range_enabled:
+            return open_orders
+
+        should_regrid, reason = self.strategy.dynamic_regrid_due(current_price)
+        if not should_regrid:
+            return open_orders
+
+        try:
+            limit = max(self.strategy.atr_period + 2, 20)
+            if self.exchange_timeout_seconds:
+                ohlcv = await asyncio.wait_for(
+                    self.exchange.fetch_ohlcv(
+                        self.config.symbol,
+                        timeframe=self.strategy.atr_timeframe,
+                        limit=limit,
+                    ),
+                    timeout=self.exchange_timeout_seconds,
+                )
+            else:
+                ohlcv = await self.exchange.fetch_ohlcv(
+                    self.config.symbol,
+                    timeframe=self.strategy.atr_timeframe,
+                    limit=limit,
+                )
+        except asyncio.TimeoutError:
+            logger.warning("ATR fetch timed out for dynamic grid")
+            return open_orders
+        except Exception as e:
+            logger.warning(f"ATR fetch failed for dynamic grid: {e}")
+            return open_orders
+
+        try:
+            atr_value = calculate_atr(ohlcv, self.strategy.atr_period)
+            lower, upper = self.strategy.compute_dynamic_bounds(
+                current_price=current_price,
+                atr_value=atr_value,
+            )
+        except Exception as e:
+            logger.warning(f"ATR calculation failed: {e}")
+            return open_orders
+
+        self.strategy.apply_dynamic_bounds(lower, upper, now=datetime.now(timezone.utc))
+        await self._cancel_out_of_range_orders(open_orders, lower, upper)
+
+        logger.info(
+            "Dynamic grid re-centered (%s): lower=%s upper=%s",
+            reason,
+            lower,
+            upper,
+        )
+
+        return [
+            order
+            for order in open_orders
+            if order.price is None or (lower <= order.price <= upper)
+        ]
+
+    async def _cancel_out_of_range_orders(
+        self,
+        open_orders: list[Order],
+        lower: Decimal,
+        upper: Decimal,
+    ) -> None:
+        """Cancel open orders outside the new grid range."""
+        if not self.order_manager:
+            return
+
+        for order in open_orders:
+            if order.price is None:
+                continue
+            if order.price < lower or order.price > upper:
+                await self.order_manager.cancel_order(order.id)
 
     async def _execute_order_with_checks(
         self,

@@ -250,12 +250,24 @@ async def _start_bot_async(
             upper_price = Decimal(str(config["upper_price"]))
             grid_count = int(config["grid_count"])
             investment_value = Decimal(str(config.get("investment", 0) or 0))
+            dynamic_range_enabled = bool(config.get("dynamic_range_enabled", False))
+            atr_period = int(config.get("atr_period", 14))
+            atr_multiplier = Decimal(str(config.get("atr_multiplier", 1.5)))
+            atr_timeframe = str(config.get("atr_timeframe", "1h"))
+            cooldown_minutes = int(config.get("cooldown_minutes", 30))
+            recenter_minutes = int(config.get("recenter_minutes", 360))
             strategy_instance = GridStrategy(
                 symbol=bot.symbol,
                 investment=investment_value,
                 lower_price=lower_price,
                 upper_price=upper_price,
                 grid_count=grid_count,
+                dynamic_range_enabled=dynamic_range_enabled,
+                atr_period=atr_period,
+                atr_multiplier=atr_multiplier,
+                atr_timeframe=atr_timeframe,
+                cooldown_minutes=cooldown_minutes,
+                recenter_minutes=recenter_minutes,
             )
         elif bot.strategy == "dca":
             amount_per_buy = config.get("amount_per_buy", config.get("amount"))
@@ -709,17 +721,36 @@ async def _tick_bot_async(bot_id: str, bot_data: dict[str, Any]) -> None:
         )
 
 
-def _grid_config_signature(config: dict[str, Any]) -> tuple[Decimal, Decimal, int, Decimal] | None:
+def _grid_config_signature(
+    config: dict[str, Any],
+) -> tuple[Decimal, Decimal, int, Decimal, bool, int, Decimal, str, int, int] | None:
     """Build a comparable signature for grid config."""
     try:
         lower_price = Decimal(str(config["lower_price"]))
         upper_price = Decimal(str(config["upper_price"]))
         grid_count = int(config["grid_count"])
         investment_value = Decimal(str(config.get("investment", 0) or 0))
+        dynamic_range_enabled = bool(config.get("dynamic_range_enabled", False))
+        atr_period = int(config.get("atr_period", 14))
+        atr_multiplier = Decimal(str(config.get("atr_multiplier", 1.5)))
+        atr_timeframe = str(config.get("atr_timeframe", "1h"))
+        cooldown_minutes = int(config.get("cooldown_minutes", 30))
+        recenter_minutes = int(config.get("recenter_minutes", 360))
     except (KeyError, ValueError, TypeError):
         return None
 
-    return (lower_price, upper_price, grid_count, investment_value)
+    return (
+        lower_price,
+        upper_price,
+        grid_count,
+        investment_value,
+        dynamic_range_enabled,
+        atr_period,
+        atr_multiplier,
+        atr_timeframe,
+        cooldown_minutes,
+        recenter_minutes,
+    )
 
 
 async def _refresh_running_bot_config(bot_id: str, bot_data: dict[str, Any]) -> None:
@@ -760,7 +791,18 @@ async def _refresh_running_bot_config(bot_id: str, bot_data: dict[str, Any]) -> 
     if not new_signature or new_signature == current_signature:
         return
 
-    lower_price, upper_price, grid_count, investment_value = new_signature
+    (
+        lower_price,
+        upper_price,
+        grid_count,
+        investment_value,
+        dynamic_range_enabled,
+        atr_period,
+        atr_multiplier,
+        atr_timeframe,
+        cooldown_minutes,
+        recenter_minutes,
+    ) = new_signature
 
     logger.info(
         "Reloading bot config in-memory: %s (lower=%s upper=%s grids=%s invest=%s)",
@@ -777,6 +819,12 @@ async def _refresh_running_bot_config(bot_id: str, bot_data: dict[str, Any]) -> 
         lower_price=lower_price,
         upper_price=upper_price,
         grid_count=grid_count,
+        dynamic_range_enabled=dynamic_range_enabled,
+        atr_period=atr_period,
+        atr_multiplier=atr_multiplier,
+        atr_timeframe=atr_timeframe,
+        cooldown_minutes=cooldown_minutes,
+        recenter_minutes=recenter_minutes,
     )
 
     # Preserve realized P&L for continuity

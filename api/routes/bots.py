@@ -33,6 +33,22 @@ class GridConfig(BaseModel):
     upper_price: float = Field(..., gt=0, description="Upper price boundary")
     grid_count: int = Field(..., ge=2, le=100, description="Number of grid lines")
     investment: float = Field(..., gt=0, description="Total investment amount")
+    dynamic_range_enabled: bool = Field(
+        False, description="Enable dynamic ATR-based range"
+    )
+    atr_period: int = Field(14, ge=2, le=200, description="ATR period length")
+    atr_multiplier: float = Field(
+        1.5, gt=0, le=10, description="ATR multiplier for range width"
+    )
+    atr_timeframe: Literal["1m", "5m", "15m", "1h", "4h", "1d"] = Field(
+        "1h", description="OHLCV timeframe for ATR"
+    )
+    cooldown_minutes: int = Field(
+        30, ge=0, le=1440, description="Minimum minutes between regrids"
+    )
+    recenter_minutes: int = Field(
+        360, ge=0, le=10080, description="Minutes between recenter checks"
+    )
 
     @model_validator(mode="after")
     def validate_price_range(self) -> "GridConfig":
