@@ -12,8 +12,19 @@ from unittest.mock import AsyncMock, MagicMock
 # Set test environment variables BEFORE any api imports
 from cryptography.fernet import Fernet
 
-if not os.getenv("ENCRYPTION_KEY"):
-    os.environ["ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+
+def _ensure_fernet_key() -> None:
+    key = os.getenv("ENCRYPTION_KEY")
+    if not key:
+        os.environ["ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+        return
+    try:
+        Fernet(key.encode())
+    except Exception:
+        os.environ["ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+
+
+_ensure_fernet_key()
 if not os.getenv("JWT_SECRET"):
     os.environ["JWT_SECRET"] = "test-jwt-secret-key-for-testing-only"
 

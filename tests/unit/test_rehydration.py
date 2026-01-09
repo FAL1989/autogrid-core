@@ -131,7 +131,8 @@ class TestRehydrateRunningBots:
             "sqlalchemy.ext.asyncio.create_async_engine", return_value=mock_engine
         ):
             with patch(
-                "sqlalchemy.orm.sessionmaker", return_value=lambda: mock_session
+                "sqlalchemy.ext.asyncio.async_sessionmaker",
+                return_value=lambda: mock_session,
             ):
                 with patch.object(
                     tasks_module, "_start_bot_async", side_effect=mock_start_bot
@@ -179,7 +180,8 @@ class TestRehydrateRunningBots:
             "sqlalchemy.ext.asyncio.create_async_engine", return_value=mock_engine
         ):
             with patch(
-                "sqlalchemy.orm.sessionmaker", return_value=lambda: mock_session
+                "sqlalchemy.ext.asyncio.async_sessionmaker",
+                return_value=lambda: mock_session,
             ):
                 with patch.object(
                     tasks_module, "_start_bot_async", side_effect=mock_start_bot
@@ -216,7 +218,8 @@ class TestRehydrateRunningBots:
             "sqlalchemy.ext.asyncio.create_async_engine", return_value=mock_engine
         ):
             with patch(
-                "sqlalchemy.orm.sessionmaker", return_value=lambda: mock_session
+                "sqlalchemy.ext.asyncio.async_sessionmaker",
+                return_value=lambda: mock_session,
             ):
                 with patch.object(
                     tasks_module, "_start_bot_async", side_effect=mock_start_bot

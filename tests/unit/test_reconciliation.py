@@ -259,7 +259,9 @@ class TestReconcileBotTradesAsync:
 
         with patch("sqlalchemy.ext.asyncio.create_async_engine") as mock_engine:
             mock_engine.return_value.dispose = AsyncMock()
-            with patch("sqlalchemy.orm.sessionmaker") as mock_sessionmaker:
+            with patch(
+                "sqlalchemy.ext.asyncio.async_sessionmaker"
+            ) as mock_sessionmaker:
                 mock_session_ctx = MagicMock()
                 mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
                 mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
@@ -370,7 +372,9 @@ class TestReconcileBotTradesAsync:
 
         with patch("sqlalchemy.ext.asyncio.create_async_engine") as mock_engine:
             mock_engine.return_value.dispose = AsyncMock()
-            with patch("sqlalchemy.orm.sessionmaker") as mock_sessionmaker:
+            with patch(
+                "sqlalchemy.ext.asyncio.async_sessionmaker"
+            ) as mock_sessionmaker:
                 mock_session_ctx = MagicMock()
                 mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
                 mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
@@ -465,7 +469,9 @@ class TestReconcileBotTradesAsync:
 
         with patch("sqlalchemy.ext.asyncio.create_async_engine") as mock_engine:
             mock_engine.return_value.dispose = AsyncMock()
-            with patch("sqlalchemy.orm.sessionmaker") as mock_sessionmaker:
+            with patch(
+                "sqlalchemy.ext.asyncio.async_sessionmaker"
+            ) as mock_sessionmaker:
                 mock_session_ctx = MagicMock()
                 mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
                 mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
@@ -503,7 +509,9 @@ class TestReconcileBotTradesAsync:
 
         with patch("sqlalchemy.ext.asyncio.create_async_engine") as mock_engine:
             mock_engine.return_value.dispose = AsyncMock()
-            with patch("sqlalchemy.orm.sessionmaker") as mock_sessionmaker:
+            with patch(
+                "sqlalchemy.ext.asyncio.async_sessionmaker"
+            ) as mock_sessionmaker:
                 mock_session_ctx = MagicMock()
                 mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
                 mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
@@ -535,7 +543,9 @@ class TestReconcileBotTradesAsync:
 
         with patch("sqlalchemy.ext.asyncio.create_async_engine") as mock_engine:
             mock_engine.return_value.dispose = AsyncMock()
-            with patch("sqlalchemy.orm.sessionmaker") as mock_sessionmaker:
+            with patch(
+                "sqlalchemy.ext.asyncio.async_sessionmaker"
+            ) as mock_sessionmaker:
                 mock_session_ctx = MagicMock()
                 mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
                 mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
@@ -567,7 +577,9 @@ class TestListRecentBotIdsAsync:
 
         with patch("sqlalchemy.ext.asyncio.create_async_engine") as mock_engine:
             mock_engine.return_value.dispose = AsyncMock()
-            with patch("sqlalchemy.orm.sessionmaker") as mock_sessionmaker:
+            with patch(
+                "sqlalchemy.ext.asyncio.async_sessionmaker"
+            ) as mock_sessionmaker:
                 mock_session_ctx = MagicMock()
                 mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
                 mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
@@ -593,7 +605,9 @@ class TestListRecentBotIdsAsync:
 
         with patch("sqlalchemy.ext.asyncio.create_async_engine") as mock_engine:
             mock_engine.return_value.dispose = AsyncMock()
-            with patch("sqlalchemy.orm.sessionmaker") as mock_sessionmaker:
+            with patch(
+                "sqlalchemy.ext.asyncio.async_sessionmaker"
+            ) as mock_sessionmaker:
                 mock_session_ctx = MagicMock()
                 mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_db)
                 mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
