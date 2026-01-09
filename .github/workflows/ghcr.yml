@@ -31,9 +31,11 @@ jobs:
           username: ${{ secrets.GHCR_USERNAME }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Resolve tag
+      - name: Resolve vars
         id: vars
         run: |
+          OWNER_LC="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "OWNER_LC=${OWNER_LC}" >> "$GITHUB_OUTPUT"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "TAG=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
           else
@@ -46,7 +48,7 @@ jobs:
           context: .
           file: api/Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/autogrid-core-api:${{ steps.vars.outputs.TAG }}
+          tags: ghcr.io/${{ steps.vars.outputs.OWNER_LC }}/autogrid-core-api:${{ steps.vars.outputs.TAG }}
 
       - name: Build and push bot image
         uses: docker/build-push-action@v5
@@ -54,4 +56,4 @@ jobs:
           context: .
           file: bot/Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/autogrid-core-bot:${{ steps.vars.outputs.TAG }}
+          tags: ghcr.io/${{ steps.vars.outputs.OWNER_LC }}/autogrid-core-bot:${{ steps.vars.outputs.TAG }}
