@@ -6,8 +6,7 @@ Async SQLAlchemy setup with PostgreSQL using asyncpg driver.
 
 from collections.abc import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import (AsyncSession, async_sessionmaker,
-                                    create_async_engine)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from api.core.config import get_settings

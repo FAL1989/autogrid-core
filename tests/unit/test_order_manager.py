@@ -10,8 +10,13 @@ from uuid import uuid4
 
 import pytest
 
-from bot.order_manager import (ORDER_TRANSITIONS, ManagedOrder, OrderManager,
-                               OrderState, OrderTransitionError)
+from bot.order_manager import (
+    ORDER_TRANSITIONS,
+    ManagedOrder,
+    OrderManager,
+    OrderState,
+    OrderTransitionError,
+)
 
 
 class TestOrderState:

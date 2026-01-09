@@ -9,9 +9,14 @@ from uuid import uuid4
 
 import pytest
 
-from api.services.jwt import (TokenError, create_access_token,
-                              create_refresh_token, create_token_pair,
-                              decode_token, verify_token_type)
+from api.services.jwt import (
+    TokenError,
+    create_access_token,
+    create_refresh_token,
+    create_token_pair,
+    decode_token,
+    verify_token_type,
+)
 from api.services.security import hash_password, verify_password
 
 

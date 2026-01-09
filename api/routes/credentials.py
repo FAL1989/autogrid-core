@@ -15,8 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.core.database import get_db
 from api.core.dependencies import get_current_user
 from api.models.orm import User
-from api.services.credential_service import (CredentialService,
-                                             CredentialValidationError)
+from api.services.credential_service import CredentialService, CredentialValidationError
 
 router = APIRouter()
 

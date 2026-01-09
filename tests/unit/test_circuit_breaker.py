@@ -11,8 +11,13 @@ from uuid import uuid4
 import pytest
 import redis.asyncio as redis_async
 
-from bot.circuit_breaker import (CircuitBreaker, CircuitBreakerConfig,
-                                 CircuitState, CircuitStatus, TripReason)
+from bot.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitState,
+    CircuitStatus,
+    TripReason,
+)
 
 
 class TestCircuitBreakerConfig:

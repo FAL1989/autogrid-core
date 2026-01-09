@@ -11,8 +11,14 @@ Provides real-time updates for:
 import logging
 from typing import Annotated
 
-from fastapi import (APIRouter, HTTPException, Query, WebSocket,
-                     WebSocketDisconnect, status)
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 
 from api.core.ws_manager import ws_manager
 from api.services.jwt import TokenError, decode_token

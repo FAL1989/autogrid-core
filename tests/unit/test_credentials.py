@@ -5,8 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from api.services.credential_service import (CredentialService,
-                                             CredentialValidationError)
+from api.services.credential_service import CredentialService, CredentialValidationError
 from bot.exchange.connector import ValidationResult
 
 
