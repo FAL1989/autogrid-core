@@ -667,9 +667,7 @@ async def _rehydrate_running_bots() -> dict:
     for bot_id in bot_ids:
         if bot_id in _running_bots:
             continue
-        start_result = await _start_bot_async(
-            bot_id, rehydrate=True, broadcast=False
-        )
+        start_result = await _start_bot_async(bot_id, rehydrate=True, broadcast=False)
         if start_result.get("status") in ("running", "already_running"):
             rehydrated += 1
 
