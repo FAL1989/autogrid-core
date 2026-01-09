@@ -28,17 +28,21 @@ _ensure_fernet_key()
 if not os.getenv("JWT_SECRET"):
     os.environ["JWT_SECRET"] = "test-jwt-secret-key-for-testing-only"
 
-import pytest
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
+import pytest  # noqa: E402
+import pytest_asyncio  # noqa: E402
+from httpx import ASGITransport, AsyncClient  # noqa: E402
+from sqlalchemy.ext.asyncio import (  # noqa: E402
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import NullPool  # noqa: E402
 
-from api.core.database import Base, get_db
-from api.models.orm import Bot, ExchangeCredential, User
-from api.services.jwt import create_token_pair
-from api.services.security import hash_password
-from bot.strategies.base import Order
+from api.core.database import Base, get_db  # noqa: E402
+from api.models.orm import Bot, ExchangeCredential, User  # noqa: E402
+from api.services.jwt import create_token_pair  # noqa: E402
+from api.services.security import hash_password  # noqa: E402
+from bot.strategies.base import Order  # noqa: E402
 
 # Test database URL (use a separate test database)
 TEST_DATABASE_URL = os.getenv(
