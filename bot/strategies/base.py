@@ -11,7 +11,6 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID, uuid4
 
-
 OrderSide = Literal["buy", "sell"]
 OrderType = Literal["limit", "market"]
 OrderStatus = Literal[
