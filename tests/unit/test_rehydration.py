@@ -4,14 +4,10 @@ Tests for bot rehydration functionality.
 These tests validate the behavior of bot rehydration after worker restart.
 """
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-import pytest_asyncio
-
-from api.models.orm import Bot
 
 
 class TestMaybeRehydrateRunningBots:

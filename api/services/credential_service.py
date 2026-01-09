@@ -101,7 +101,8 @@ class CredentialService:
             Tuple of (created credential, validation result).
 
         Raises:
-            CredentialValidationError: If credentials are invalid or don't have trade permission.
+            CredentialValidationError: If credentials are invalid or don't have trade
+                permission.
         """
         # Validate credentials with exchange
         connector = CCXTConnector(

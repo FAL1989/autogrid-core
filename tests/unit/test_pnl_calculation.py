@@ -7,8 +7,6 @@ All tests reflect the current behavior of the code.
 
 from decimal import Decimal
 
-import pytest
-
 from bot.tasks import _apply_trade_to_fifo, _fee_to_quote, _split_symbol
 
 

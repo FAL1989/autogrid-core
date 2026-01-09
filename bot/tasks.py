@@ -38,7 +38,8 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     task_time_limit=settings.celery_task_time_limit,  # 1 hour max per task (default)
-    task_soft_time_limit=settings.celery_task_soft_time_limit,  # Soft limit for graceful shutdown
+    # Soft limit for graceful shutdown.
+    task_soft_time_limit=settings.celery_task_soft_time_limit,
     worker_prefetch_multiplier=settings.celery_worker_prefetch_multiplier,
     task_acks_late=settings.celery_task_acks_late,
     task_reject_on_worker_lost=settings.celery_task_reject_on_worker_lost,
@@ -166,8 +167,6 @@ def start_trading_bot(self, bot_id: str) -> dict:
     Returns:
         Dict with status and any error message
     """
-    from api.core.config import get_settings
-
     logger.info(f"Starting bot {bot_id}")
 
     try:
@@ -187,7 +186,7 @@ async def _start_bot_async(
 ) -> dict:
     """Async implementation of bot startup."""
     import redis.asyncio as redis_async
-    from sqlalchemy import func, select, update
+    from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -357,7 +356,9 @@ async def _start_bot_async(
                 str(settings.circuit_breaker_price_deviation)
             ),
             cooldown_seconds=settings.circuit_breaker_cooldown,
-            order_rate_window_seconds=settings.circuit_breaker_order_rate_window_seconds,
+            order_rate_window_seconds=(
+                settings.circuit_breaker_order_rate_window_seconds
+            ),
             loss_window_seconds=settings.circuit_breaker_loss_window_seconds,
             half_open_orders=settings.circuit_breaker_half_open_orders,
         )
@@ -478,7 +479,7 @@ async def _stop_bot_async(
     metadata: dict | None = None,
 ) -> dict:
     """Async implementation of bot shutdown."""
-    from sqlalchemy import func, select, update
+    from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -1161,8 +1162,8 @@ async def _process_order_fill_async(
         # Record P&L in circuit breaker (if loss)
         bot_data = _running_bots.get(bot_id)
         if bot_data:
-            circuit_breaker = bot_data.get("circuit_breaker")
-            # P&L calculation would go here based on position tracking
+            # P&L calculation would go here based on position tracking.
+            pass
 
     await engine.dispose()
 
@@ -1269,7 +1270,7 @@ def reconcile_running_bots_trades(self) -> dict:
 
 async def _list_recent_bot_ids_async(hours: int = 24) -> list[str]:
     """List bot IDs updated within the last N hours."""
-    from sqlalchemy import func, select
+    from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -1773,7 +1774,7 @@ def execute_dca_buy(self, bot_id: str) -> dict:
 
 async def _execute_dca_buy_async(bot_id: str) -> dict:
     """Async implementation of DCA buy."""
-    from bot.order_manager import ManagedOrder, OrderState
+    from bot.order_manager import ManagedOrder
 
     bot_data = _running_bots.get(bot_id)
     if not bot_data:
@@ -1868,8 +1869,6 @@ async def _dca_interval_buy_async(interval: str) -> dict:
 
         # Check budget
         amount_per_buy = Decimal(str(config.get("amount_per_buy", 100)))
-        investment = Decimal(str(config.get("investment", 1000)))
-
         # Get strategy state to check remaining budget
         strategy = bot_data.get("strategy_instance")
         if isinstance(strategy, DCAStrategy):

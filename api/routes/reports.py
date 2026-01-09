@@ -179,19 +179,30 @@ async def export_trades_csv(
 
     def _generate():
         buffer = StringIO()
-        buffer.write(
-            "timestamp,bot_id,bot_name,strategy,symbol,side,price,quantity,fee,fee_currency,realized_pnl\n"
+        header = (
+            "timestamp,bot_id,bot_name,strategy,symbol,side,price,quantity,fee,"
+            "fee_currency,realized_pnl\n"
         )
+        buffer.write(header)
         yield buffer.getvalue()
         buffer.seek(0)
         buffer.truncate(0)
 
         for trade, bot in result.all():
-            buffer.write(
-                f"{trade.timestamp.isoformat()},{trade.bot_id},{bot.name},{bot.strategy},"
-                f"{trade.symbol},{trade.side},{trade.price},{trade.quantity},"
-                f"{trade.fee},{trade.fee_currency or ''},{trade.realized_pnl or 0}\n"
-            )
+            row = [
+                trade.timestamp.isoformat(),
+                str(trade.bot_id),
+                bot.name,
+                bot.strategy,
+                trade.symbol,
+                trade.side,
+                str(trade.price),
+                str(trade.quantity),
+                str(trade.fee),
+                trade.fee_currency or "",
+                str(trade.realized_pnl or 0),
+            ]
+            buffer.write(",".join(row) + "\n")
             yield buffer.getvalue()
             buffer.seek(0)
             buffer.truncate(0)

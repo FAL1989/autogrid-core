@@ -77,7 +77,10 @@ class TestEncryptionService:
     def test_different_encryptions_produce_different_ciphertext(
         self, encryption_service: EncryptionService
     ) -> None:
-        """Same plaintext encrypted twice should produce different ciphertext (due to IV)."""
+        """Same plaintext encrypted twice should produce different ciphertext.
+
+        Fernet uses a random IV.
+        """
         plaintext = "my-secret-api-key"
         encrypted1 = encryption_service.encrypt(plaintext)
         encrypted2 = encryption_service.encrypt(plaintext)

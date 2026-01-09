@@ -10,8 +10,6 @@ Tests for GridStrategy with:
 
 from decimal import Decimal
 
-import pytest
-
 from bot.strategies.base import Order
 from bot.strategies.grid import GridLevel, GridStrategy
 
@@ -122,7 +120,7 @@ class TestGridStrategySellOrders:
     """Tests for GridStrategy sell order generation."""
 
     def test_generates_sell_orders_with_position(self, grid_config: dict) -> None:
-        """Test that sell orders are created at the next grid level when position exists."""
+        """Test that sell orders are created at the next grid level."""
         strategy = GridStrategy(
             symbol=grid_config["symbol"],
             investment=Decimal(str(grid_config["investment"])),
@@ -142,7 +140,8 @@ class TestGridStrategySellOrders:
         strategy.on_order_filled(buy_order, Decimal("47500"))
 
         # Current price BELOW the position level
-        # The sell order should be generated at the next grid level (i+1), regardless of current price.
+        # The sell order should be generated at the next grid level (i+1),
+        # regardless of current price.
         current_price = Decimal("46000")
         orders = strategy.calculate_orders(current_price, [])
 
@@ -154,7 +153,7 @@ class TestGridStrategySellOrders:
         assert sell_orders[0].quantity == Decimal("0.02")
 
     def test_sell_orders_when_price_above_position(self, grid_config: dict) -> None:
-        """Test that sell orders are still created even when price is above position level."""
+        """Test that sell orders are created when price is above position."""
         strategy = GridStrategy(
             symbol=grid_config["symbol"],
             investment=Decimal(str(grid_config["investment"])),

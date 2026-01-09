@@ -211,7 +211,8 @@ class DCAStrategy(BaseStrategy):
             self._total_spent += fill_price * order.quantity
             self._total_quantity += order.quantity
             self._last_buy_time = datetime.now(timezone.utc)
-            # Note: Don't reset _highest_price here to allow drop detection to work properly
+            # Note: Don't reset _highest_price here to allow drop detection
+            # to work properly.
 
         else:  # sell
             # Calculate realized P&L

@@ -6,10 +6,8 @@ Tests for API endpoints with real database.
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.orm import ExchangeCredential, User
-from api.services.security import hash_password
 
 
 @pytest.mark.asyncio

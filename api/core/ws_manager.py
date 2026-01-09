@@ -29,7 +29,9 @@ class ConnectionManager:
         await websocket.accept()
         self.active_connections[user_id].add(websocket)
         logger.info(
-            f"WebSocket connected for user {user_id}. Total connections: {len(self.active_connections[user_id])}"
+            "WebSocket connected for user %s. Total connections: %s",
+            user_id,
+            len(self.active_connections[user_id]),
         )
 
     def disconnect(self, websocket: WebSocket, user_id: str) -> None:
@@ -37,7 +39,9 @@ class ConnectionManager:
         if websocket in self.active_connections[user_id]:
             self.active_connections[user_id].discard(websocket)
             logger.info(
-                f"WebSocket disconnected for user {user_id}. Remaining connections: {len(self.active_connections[user_id])}"
+                "WebSocket disconnected for user %s. Remaining connections: %s",
+                user_id,
+                len(self.active_connections[user_id]),
             )
 
             # Clean up empty user entries

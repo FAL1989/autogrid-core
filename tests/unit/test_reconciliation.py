@@ -5,7 +5,6 @@ These tests validate trade reconciliation with exchange.
 All exchange calls are mocked - no network access.
 """
 
-from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -42,16 +41,14 @@ class TestReconcileRunningBotsTrades:
             reconcile_calls.append(bot_id)
             return {"status": "ok", "created": 1, "skipped": 0}
 
+        def run_coro(coro):
+            loop = tasks_module.asyncio.get_event_loop()
+            return loop.run_until_complete(coro)
+
         with patch.object(
             tasks_module, "_reconcile_bot_trades_async", side_effect=mock_reconcile
         ):
-            with patch.object(
-                tasks_module,
-                "_run_async",
-                side_effect=lambda coro: tasks_module.asyncio.get_event_loop().run_until_complete(
-                    coro
-                ),
-            ):
+            with patch.object(tasks_module, "_run_async", side_effect=run_coro):
                 result = tasks_module.reconcile_running_bots_trades()
 
         assert len(reconcile_calls) == 2
@@ -72,19 +69,17 @@ class TestReconcileRunningBotsTrades:
         async def mock_reconcile(bot_id, since_minutes=1440, limit=100):
             return {"status": "ok", "created": 1, "skipped": 0}
 
+        def run_coro(coro):
+            loop = tasks_module.asyncio.get_event_loop()
+            return loop.run_until_complete(coro)
+
         with patch.object(
             tasks_module, "_list_recent_bot_ids_async", side_effect=mock_list_recent
         ):
             with patch.object(
                 tasks_module, "_reconcile_bot_trades_async", side_effect=mock_reconcile
             ):
-                with patch.object(
-                    tasks_module,
-                    "_run_async",
-                    side_effect=lambda coro: tasks_module.asyncio.get_event_loop().run_until_complete(
-                        coro
-                    ),
-                ):
+                with patch.object(tasks_module, "_run_async", side_effect=run_coro):
                     result = tasks_module.reconcile_running_bots_trades()
 
         assert result["created"] == 1
@@ -109,16 +104,14 @@ class TestReconcileRunningBotsTrades:
                 raise Exception("Exchange error")
             return {"status": "ok", "created": 1, "skipped": 0}
 
+        def run_coro(coro):
+            loop = tasks_module.asyncio.get_event_loop()
+            return loop.run_until_complete(coro)
+
         with patch.object(
             tasks_module, "_reconcile_bot_trades_async", side_effect=mock_reconcile
         ):
-            with patch.object(
-                tasks_module,
-                "_run_async",
-                side_effect=lambda coro: tasks_module.asyncio.get_event_loop().run_until_complete(
-                    coro
-                ),
-            ):
+            with patch.object(tasks_module, "_run_async", side_effect=run_coro):
                 result = tasks_module.reconcile_running_bots_trades()
 
         # One error, one success
@@ -147,16 +140,14 @@ class TestReconcileRunningBotsTrades:
             result_idx[0] += 1
             return r
 
+        def run_coro(coro):
+            loop = tasks_module.asyncio.get_event_loop()
+            return loop.run_until_complete(coro)
+
         with patch.object(
             tasks_module, "_reconcile_bot_trades_async", side_effect=mock_reconcile
         ):
-            with patch.object(
-                tasks_module,
-                "_run_async",
-                side_effect=lambda coro: tasks_module.asyncio.get_event_loop().run_until_complete(
-                    coro
-                ),
-            ):
+            with patch.object(tasks_module, "_run_async", side_effect=run_coro):
                 result = tasks_module.reconcile_running_bots_trades()
 
         assert result["created"] == 4  # 3 + 1

@@ -5,12 +5,11 @@ Endpoints for viewing and managing bot orders and trades.
 """
 
 from datetime import datetime
-from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.database import get_db

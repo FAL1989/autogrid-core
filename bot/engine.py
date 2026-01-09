@@ -17,7 +17,7 @@ from api.core.config import get_settings
 from bot.circuit_breaker import CircuitBreaker
 from bot.exchange.connector import ExchangeConnector
 from bot.notifications import Notifier, NullNotifier
-from bot.order_manager import ManagedOrder, OrderManager, OrderState
+from bot.order_manager import ManagedOrder, OrderManager
 from bot.strategies.base import BaseStrategy, Order
 
 logger = logging.getLogger(__name__)

@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
-from typing import Any
 from uuid import UUID
 
 import redis.asyncio as redis_async
@@ -53,8 +52,10 @@ class CircuitBreakerConfig:
 
     Attributes:
         max_orders_per_minute: Maximum orders per rate window (default: 50)
-        max_loss_percent_per_hour: Maximum loss as % of investment per loss window (default: 5.0)
-        max_price_deviation_percent: Maximum order price deviation from market (default: 10.0)
+        max_loss_percent_per_hour: Maximum loss as % of investment per loss window
+            (default: 5.0)
+        max_price_deviation_percent: Maximum order price deviation from market
+            (default: 10.0)
         cooldown_seconds: Time to wait before allowing orders after trip (default: 300)
         order_rate_window_seconds: Rate limiting window in seconds (default: 60)
         loss_window_seconds: Loss tracking window in seconds (default: 3600)
@@ -168,7 +169,11 @@ class CircuitBreaker:
             await self.trip(bot_id, TripReason.LOSS_LIMIT_EXCEEDED)
             return (
                 False,
-                f"loss_limit_exceeded ({loss_percent:.2f}%/{self.config.max_loss_percent_per_hour}%)",
+                (
+                    "loss_limit_exceeded "
+                    f"({loss_percent:.2f}%/"
+                    f"{self.config.max_loss_percent_per_hour}%)"
+                ),
             )
 
         # Check price deviation (only for limit orders)
@@ -177,7 +182,11 @@ class CircuitBreaker:
             if deviation > self.config.max_price_deviation_percent:
                 return (
                     False,
-                    f"price_deviation_exceeded ({deviation:.2f}%/{self.config.max_price_deviation_percent}%)",
+                    (
+                        "price_deviation_exceeded "
+                        f"({deviation:.2f}%/"
+                        f"{self.config.max_price_deviation_percent}%)"
+                    ),
                 )
 
         # All checks passed

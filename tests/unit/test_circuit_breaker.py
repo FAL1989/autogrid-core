@@ -5,7 +5,7 @@ Tests for circuit breaker safety limits and state management.
 """
 
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -15,7 +15,6 @@ from bot.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
     CircuitState,
-    CircuitStatus,
     TripReason,
 )
 

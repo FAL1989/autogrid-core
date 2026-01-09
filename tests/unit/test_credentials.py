@@ -167,7 +167,10 @@ class TestCredentialService:
     async def test_create_allows_withdraw_with_warning(
         self, mock_db: MagicMock, mock_encryption: MagicMock
     ) -> None:
-        """Create should allow credentials with withdraw permission (but mark as unsafe)."""
+        """Create should allow credentials with withdraw permission.
+
+        Withdraw-enabled keys are marked unsafe.
+        """
         with patch(
             "api.services.credential_service.get_encryption_service",
             return_value=mock_encryption,

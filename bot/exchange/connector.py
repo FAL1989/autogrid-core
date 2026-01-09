@@ -267,7 +267,7 @@ class CCXTConnector(ExchangeConnector):
             await self._exchange.load_markets()
 
             # Validate credentials
-            balance = await self._exchange.fetch_balance()
+            await self._exchange.fetch_balance()
             logger.info(f"Connected to {self.exchange_id}")
 
             self._connected = True
