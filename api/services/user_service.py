@@ -35,9 +35,7 @@ class UserService:
         Returns:
             User if found, None otherwise.
         """
-        result = await self.db.execute(
-            select(User).where(User.id == user_id)
-        )
+        result = await self.db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
 
     async def get_by_email(self, email: str) -> User | None:
@@ -50,9 +48,7 @@ class UserService:
         Returns:
             User if found, None otherwise.
         """
-        result = await self.db.execute(
-            select(User).where(User.email == email.lower())
-        )
+        result = await self.db.execute(select(User).where(User.email == email.lower()))
         return result.scalar_one_or_none()
 
     async def create(self, email: str, password: str) -> User:

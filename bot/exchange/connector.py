@@ -433,12 +433,14 @@ class CCXTConnector(ExchangeConnector):
             import ccxt.async_support as ccxt
 
             exchange_class = getattr(ccxt, self.exchange_id)
-            self._exchange = exchange_class({
-                "apiKey": self.api_key,
-                "secret": self.api_secret,
-                "sandbox": self.testnet,
-                "enableRateLimit": True,
-            })
+            self._exchange = exchange_class(
+                {
+                    "apiKey": self.api_key,
+                    "secret": self.api_secret,
+                    "sandbox": self.testnet,
+                    "enableRateLimit": True,
+                }
+            )
 
             if self.testnet and hasattr(self._exchange, "set_sandbox_mode"):
                 self._exchange.set_sandbox_mode(True)
@@ -513,7 +515,11 @@ class CCXTConnector(ExchangeConnector):
                 result = await self._exchange.private_get_v5_user_query_api()
                 permissions = result.get("result", {}).get("permissions", {})
                 wallet_perms = permissions.get("Wallet", [])
-                return "Withdrawal" in wallet_perms if isinstance(wallet_perms, list) else False
+                return (
+                    "Withdrawal" in wallet_perms
+                    if isinstance(wallet_perms, list)
+                    else False
+                )
 
             # MEXC and others: no direct API, assume False (safe default)
             return False

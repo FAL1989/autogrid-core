@@ -58,9 +58,7 @@ class TestEncryptionService:
         with pytest.raises(EncryptionError):
             encryption_service.decrypt("invalid-encrypted-data")
 
-    def test_encrypt_empty_string(
-        self, encryption_service: EncryptionService
-    ) -> None:
+    def test_encrypt_empty_string(self, encryption_service: EncryptionService) -> None:
         """Empty string should encrypt and decrypt correctly."""
         plaintext = ""
         encrypted = encryption_service.encrypt(plaintext)
@@ -68,9 +66,7 @@ class TestEncryptionService:
 
         assert decrypted == plaintext
 
-    def test_encrypt_unicode(
-        self, encryption_service: EncryptionService
-    ) -> None:
+    def test_encrypt_unicode(self, encryption_service: EncryptionService) -> None:
         """Unicode strings should encrypt correctly."""
         plaintext = "secret-key-with-unicode-acao-teste"
         encrypted = encryption_service.encrypt(plaintext)

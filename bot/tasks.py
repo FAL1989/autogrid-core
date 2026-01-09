@@ -13,8 +13,8 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from celery import Celery
-from celery.signals import worker_ready
 from celery.schedules import crontab
+from celery.signals import worker_ready
 
 from api.core.config import get_settings
 from bot.notifications import get_notifier
@@ -285,13 +285,18 @@ async def _start_bot_async(
             )
             interval = config.get("interval")
             investment_value = Decimal(
-                str(config.get("investment", amount_per_buy_value) or amount_per_buy_value)
+                str(
+                    config.get("investment", amount_per_buy_value)
+                    or amount_per_buy_value
+                )
             )
 
             normalized_config.setdefault("amount_per_buy", float(amount_per_buy_value))
             normalized_config.setdefault("investment", float(investment_value))
             if trigger_drop is not None:
-                normalized_config.setdefault("trigger_drop_percent", float(trigger_drop))
+                normalized_config.setdefault(
+                    "trigger_drop_percent", float(trigger_drop)
+                )
             if take_profit is not None:
                 normalized_config.setdefault("take_profit_percent", float(take_profit))
 
@@ -302,12 +307,12 @@ async def _start_bot_async(
                     investment=investment_value,
                     amount_per_buy=amount_per_buy_value,
                     interval=interval,
-                    trigger_drop_percent=Decimal(str(trigger_drop))
-                    if trigger_drop is not None
-                    else None,
-                    take_profit_percent=Decimal(str(take_profit))
-                    if take_profit is not None
-                    else None,
+                    trigger_drop_percent=(
+                        Decimal(str(trigger_drop)) if trigger_drop is not None else None
+                    ),
+                    take_profit_percent=(
+                        Decimal(str(take_profit)) if take_profit is not None else None
+                    ),
                 )
             else:
                 strategy_instance = DCAStrategy(
@@ -315,12 +320,12 @@ async def _start_bot_async(
                     investment=investment_value,
                     amount_per_buy=amount_per_buy_value,
                     interval=interval,
-                    trigger_drop_percent=Decimal(str(trigger_drop))
-                    if trigger_drop is not None
-                    else None,
-                    take_profit_percent=Decimal(str(take_profit))
-                    if take_profit is not None
-                    else None,
+                    trigger_drop_percent=(
+                        Decimal(str(trigger_drop)) if trigger_drop is not None else None
+                    ),
+                    take_profit_percent=(
+                        Decimal(str(take_profit)) if take_profit is not None else None
+                    ),
                 )
         else:
             return {"status": "error", "message": f"Unknown strategy {bot.strategy}"}
@@ -418,6 +423,7 @@ async def _start_bot_async(
         if broadcast:
             # Broadcast bot status update via WebSocket
             from api.core.ws_manager import broadcast_bot_status
+
             await broadcast_bot_status(
                 user_id=str(bot.user_id),
                 bot_id=bot_id,
@@ -527,6 +533,7 @@ async def _stop_bot_async(
             event_metadata = dict(metadata or {})
             event_metadata["orders_cancelled"] = orders_cancelled
             from api.services.bot_event_service import record_bot_event
+
             await record_bot_event(
                 db=db,
                 bot_id=bot.id,
@@ -540,11 +547,12 @@ async def _stop_bot_async(
 
             # Broadcast bot status update via WebSocket
             from api.core.ws_manager import broadcast_bot_status
+
             await broadcast_bot_status(
                 user_id=str(bot.user_id),
                 bot_id=bot_id,
                 status="stopped",
-                message=f"Bot stopped, {orders_cancelled} orders cancelled"
+                message=f"Bot stopped, {orders_cancelled} orders cancelled",
             )
 
     await engine.dispose()
@@ -644,7 +652,8 @@ async def _restore_grid_strategy_state(
     """Restore grid strategy state from persisted trades."""
     from sqlalchemy import select
 
-    from api.models.orm import Order as OrderORM, Trade
+    from api.models.orm import Order as OrderORM
+    from api.models.orm import Trade
     from bot.strategies.base import Order
 
     result = await db.execute(
@@ -672,10 +681,9 @@ async def _restore_grid_strategy_state(
         )
         strategy_instance.on_order_filled(restored_order, trade.price)
 
-    realized_sum = sum(
-        Decimal(str(trade.realized_pnl or 0)) for trade, _ in rows
-    )
+    realized_sum = sum(Decimal(str(trade.realized_pnl or 0)) for trade, _ in rows)
     strategy_instance.realized_pnl = realized_sum
+
 
 async def _tick_bot_async(bot_id: str, bot_data: dict[str, Any]) -> None:
     """Run a single strategy tick for a bot."""
@@ -945,7 +953,9 @@ async def _process_order_fill_async(
     from sqlalchemy.orm import sessionmaker
 
     from api.core.config import get_settings
-    from api.models.orm import Bot, Order as OrderORM, Trade
+    from api.models.orm import Bot
+    from api.models.orm import Order as OrderORM
+    from api.models.orm import Trade
 
     settings = get_settings()
     engine = create_async_engine(settings.async_database_url)
@@ -979,9 +989,7 @@ async def _process_order_fill_async(
         # Update order
         order.filled_quantity = Decimal(str(filled_quantity_raw or 0))
         order.average_fill_price = (
-            Decimal(str(avg_price_raw))
-            if avg_price_raw is not None
-            else None
+            Decimal(str(avg_price_raw)) if avg_price_raw is not None else None
         )
         order.status = status
 
@@ -990,10 +998,7 @@ async def _process_order_fill_async(
             or fill_data.get("tradeId")
             or fill_data.get("id")
         )
-        realized_pnl_raw = (
-            fill_data.get("realizedPnl")
-            or fill_data.get("realized_pnl")
-        )
+        realized_pnl_raw = fill_data.get("realizedPnl") or fill_data.get("realized_pnl")
         timestamp_value = (
             fill_data.get("timestamp")
             or fill_data.get("transactTime")
@@ -1033,10 +1038,7 @@ async def _process_order_fill_async(
                 await db.execute(select(Trade).where(*match_query))
             ).scalar_one_or_none()
         if existing_trade:
-            if (
-                realized_pnl_raw is not None
-                and existing_trade.realized_pnl is None
-            ):
+            if realized_pnl_raw is not None and existing_trade.realized_pnl is None:
                 existing_trade.realized_pnl = Decimal(str(realized_pnl_raw))
             await db.commit()
             return {
@@ -1051,9 +1053,7 @@ async def _process_order_fill_async(
         fee_currency = fill_data.get("feeAsset", fill_data.get("commissionAsset"))
         if isinstance(fee_value, dict):
             fee_currency = (
-                fee_value.get("currency")
-                or fee_value.get("asset")
-                or fee_currency
+                fee_value.get("currency") or fee_value.get("asset") or fee_currency
             )
             fee_value = fee_value.get(
                 "cost", fee_value.get("commission", fee_value.get("fee", 0))
@@ -1063,9 +1063,7 @@ async def _process_order_fill_async(
             list_currency = None
             for item in fee_value:
                 if isinstance(item, dict):
-                    cost = item.get(
-                        "cost", item.get("commission", item.get("fee", 0))
-                    )
+                    cost = item.get("cost", item.get("commission", item.get("fee", 0)))
                     try:
                         total_fee += Decimal(str(cost))
                     except Exception:
@@ -1089,12 +1087,16 @@ async def _process_order_fill_async(
         realized_pnl_value = realized_pnl_raw
         if realized_pnl_value is None:
             existing_trades = (
-                await db.execute(
-                    select(Trade)
-                    .where(Trade.bot_id == order.bot_id)
-                    .order_by(Trade.timestamp.asc())
+                (
+                    await db.execute(
+                        select(Trade)
+                        .where(Trade.bot_id == order.bot_id)
+                        .order_by(Trade.timestamp.asc())
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
             base_symbol, quote_symbol = _split_symbol(order.symbol)
             buy_lots: list[dict[str, Decimal]] = []
@@ -1113,9 +1115,7 @@ async def _process_order_fill_async(
             realized_pnl_value = _apply_trade_to_fifo(
                 buy_lots=buy_lots,
                 side=order.side,
-                price=order.average_fill_price
-                or order.price
-                or Decimal("0"),
+                price=order.average_fill_price or order.price or Decimal("0"),
                 quantity=order.filled_quantity,
                 fee_cost=Decimal(str(fee_value or 0)),
                 fee_currency=fee_currency,
@@ -1127,9 +1127,9 @@ async def _process_order_fill_async(
         trade = Trade(
             bot_id=UUID(bot_id),
             order_id=UUID(order_id),
-            exchange_trade_id=str(exchange_trade_id)
-            if exchange_trade_id is not None
-            else None,
+            exchange_trade_id=(
+                str(exchange_trade_id) if exchange_trade_id is not None else None
+            ),
             symbol=order.symbol,
             side=order.side,
             price=order.average_fill_price or order.price or Decimal("0"),
@@ -1282,9 +1282,7 @@ async def _list_recent_bot_ids_async(hours: int = 24) -> list[str]:
 
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
     async with async_session() as db:
-        result = await db.execute(
-            select(Bot.id).where(Bot.updated_at >= since)
-        )
+        result = await db.execute(select(Bot.id).where(Bot.updated_at >= since))
         bot_ids = [str(row[0]) for row in result.all()]
 
     await engine.dispose()
@@ -1302,7 +1300,9 @@ async def _reconcile_bot_trades_async(
     from sqlalchemy.orm import sessionmaker
 
     from api.core.config import get_settings
-    from api.models.orm import Bot, ExchangeCredential, Order as OrderORM, Trade
+    from api.models.orm import Bot, ExchangeCredential
+    from api.models.orm import Order as OrderORM
+    from api.models.orm import Trade
     from api.services.credential_service import CredentialService
     from bot.exchange.connector import CCXTConnector
 
@@ -1356,9 +1356,7 @@ async def _reconcile_bot_trades_async(
             }
 
             buy_lots: list[dict[str, Decimal]] = []
-            sorted_trades = sorted(
-                trades, key=lambda t: t.get("timestamp") or 0
-            )
+            sorted_trades = sorted(trades, key=lambda t: t.get("timestamp") or 0)
             base_symbol, quote_symbol = _split_symbol(bot.symbol)
             touched_order_ids: set[UUID] = set()
 
@@ -1473,7 +1471,9 @@ async def _reconcile_bot_trades_async(
                     row[0]: (Decimal(str(row[1] or 0)), Decimal(str(row[2] or 0)))
                     for row in totals
                 }
-                orders_by_id = {order.id: order for order in orders_by_exchange.values()}
+                orders_by_id = {
+                    order.id: order for order in orders_by_exchange.values()
+                }
                 for order_id, (filled_qty, notional) in totals_map.items():
                     order_obj = orders_by_id.get(order_id)
                     if not order_obj:
@@ -1885,8 +1885,16 @@ async def _dca_interval_buy_async(interval: str) -> dict:
             logger.error(f"Failed to queue DCA buy for {bot_id}: {e}")
             failed += 1
 
-    logger.info(f"DCA {interval} buy: executed={executed}, skipped={skipped}, failed={failed}")
-    return {"status": "ok", "interval": interval, "executed": executed, "skipped": skipped, "failed": failed}
+    logger.info(
+        f"DCA {interval} buy: executed={executed}, skipped={skipped}, failed={failed}"
+    )
+    return {
+        "status": "ok",
+        "interval": interval,
+        "executed": executed,
+        "skipped": skipped,
+        "failed": failed,
+    }
 
 
 @celery_app.task(bind=True, max_retries=3)
@@ -1939,7 +1947,9 @@ async def _dca_check_price_drops_async() -> dict:
                 if strategy._should_buy_by_drop(current_price):
                     execute_dca_buy.delay(bot_id)
                     triggered += 1
-                    logger.info(f"DCA {bot_id}: Price drop triggered buy at {current_price}")
+                    logger.info(
+                        f"DCA {bot_id}: Price drop triggered buy at {current_price}"
+                    )
 
         except Exception as e:
             logger.error(f"Price drop check failed for {bot_id}: {e}")
@@ -1992,7 +2002,9 @@ async def _dca_check_take_profit_async() -> dict:
                 if strategy._should_take_profit(current_price):
                     execute_dca_sell.delay(bot_id, str(current_price))
                     triggered += 1
-                    logger.info(f"DCA {bot_id}: Take profit triggered at {current_price}")
+                    logger.info(
+                        f"DCA {bot_id}: Take profit triggered at {current_price}"
+                    )
 
         except Exception as e:
             logger.error(f"Take profit check failed for {bot_id}: {e}")
@@ -2184,7 +2196,9 @@ def run_backtest(
     }
 
 
-async def _update_bot_status(bot_id: str, status: str, error_message: str | None = None) -> None:
+async def _update_bot_status(
+    bot_id: str, status: str, error_message: str | None = None
+) -> None:
     """Update bot status in database."""
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine

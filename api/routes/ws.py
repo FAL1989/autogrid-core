@@ -11,10 +11,11 @@ Provides real-time updates for:
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPException, status
+from fastapi import (APIRouter, HTTPException, Query, WebSocket,
+                     WebSocketDisconnect, status)
 
 from api.core.ws_manager import ws_manager
-from api.services.jwt import decode_token, TokenError
+from api.services.jwt import TokenError, decode_token
 
 logger = logging.getLogger(__name__)
 
@@ -112,14 +113,16 @@ async def websocket_endpoint(
 
     try:
         # Send connection confirmation
-        await websocket.send_json({
-            "type": "connected",
-            "payload": {
-                "user_id": user_id,
-                "message": "WebSocket connection established",
-            },
-            "timestamp": ws_manager._get_timestamp(),
-        })
+        await websocket.send_json(
+            {
+                "type": "connected",
+                "payload": {
+                    "user_id": user_id,
+                    "message": "WebSocket connection established",
+                },
+                "timestamp": ws_manager._get_timestamp(),
+            }
+        )
 
         # Keep connection alive and handle incoming messages
         while True:
@@ -128,21 +131,25 @@ async def websocket_endpoint(
 
                 # Handle ping/pong for keepalive
                 if data.get("type") == "ping":
-                    await websocket.send_json({
-                        "type": "pong",
-                        "timestamp": ws_manager._get_timestamp(),
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "pong",
+                            "timestamp": ws_manager._get_timestamp(),
+                        }
+                    )
 
                 # Handle subscription requests (for future use)
                 elif data.get("type") == "subscribe":
                     # Could be used to subscribe to specific bots
                     bot_id = data.get("bot_id")
                     if bot_id:
-                        await websocket.send_json({
-                            "type": "subscribed",
-                            "payload": {"bot_id": bot_id},
-                            "timestamp": ws_manager._get_timestamp(),
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "subscribed",
+                                "payload": {"bot_id": bot_id},
+                                "timestamp": ws_manager._get_timestamp(),
+                            }
+                        )
 
             except Exception as e:
                 # Handle JSON decode errors gracefully

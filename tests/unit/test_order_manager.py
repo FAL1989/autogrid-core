@@ -10,13 +10,8 @@ from uuid import uuid4
 
 import pytest
 
-from bot.order_manager import (
-    ManagedOrder,
-    OrderManager,
-    OrderState,
-    OrderTransitionError,
-    ORDER_TRANSITIONS,
-)
+from bot.order_manager import (ORDER_TRANSITIONS, ManagedOrder, OrderManager,
+                               OrderState, OrderTransitionError)
 
 
 class TestOrderState:
@@ -239,7 +234,9 @@ class TestOrderManager:
     def mock_db_session(self) -> MagicMock:
         """Create a mock database session."""
         mock = MagicMock()
-        mock.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: None))
+        mock.execute = AsyncMock(
+            return_value=MagicMock(scalar_one_or_none=lambda: None)
+        )
         mock.add = MagicMock()
         mock.commit = AsyncMock()
         mock.rollback = AsyncMock()
@@ -474,12 +471,14 @@ class TestOrderManager:
         await order_manager.submit_order(sample_order)
 
         # Simulate WebSocket fill update
-        await order_manager.handle_websocket_update({
-            "orderId": "exchange-order-123",
-            "status": "filled",
-            "filled": 0.1,
-            "average": 50100.0,
-        })
+        await order_manager.handle_websocket_update(
+            {
+                "orderId": "exchange-order-123",
+                "status": "filled",
+                "filled": 0.1,
+                "average": 50100.0,
+            }
+        )
 
         assert sample_order.state == OrderState.FILLED
         assert sample_order.filled_quantity == Decimal("0.1")
@@ -494,12 +493,14 @@ class TestOrderManager:
         """Partial fill should transition to PARTIALLY_FILLED."""
         await order_manager.submit_order(sample_order)
 
-        await order_manager.handle_websocket_update({
-            "orderId": "exchange-order-123",
-            "status": "open",
-            "filled": 0.05,
-            "average": 50000.0,
-        })
+        await order_manager.handle_websocket_update(
+            {
+                "orderId": "exchange-order-123",
+                "status": "open",
+                "filled": 0.05,
+                "average": 50000.0,
+            }
+        )
 
         assert sample_order.state == OrderState.PARTIALLY_FILLED
         assert sample_order.filled_quantity == Decimal("0.05")
@@ -510,10 +511,12 @@ class TestOrderManager:
     ) -> None:
         """Unknown order ID should be ignored."""
         # Should not raise
-        await order_manager.handle_websocket_update({
-            "orderId": "unknown-order-id",
-            "status": "filled",
-        })
+        await order_manager.handle_websocket_update(
+            {
+                "orderId": "unknown-order-id",
+                "status": "filled",
+            }
+        )
 
     async def test_sync_order_status(
         self,

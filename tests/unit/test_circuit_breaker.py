@@ -11,13 +11,8 @@ from uuid import uuid4
 import pytest
 import redis.asyncio as redis_async
 
-from bot.circuit_breaker import (
-    CircuitBreaker,
-    CircuitBreakerConfig,
-    CircuitState,
-    CircuitStatus,
-    TripReason,
-)
+from bot.circuit_breaker import (CircuitBreaker, CircuitBreakerConfig,
+                                 CircuitState, CircuitStatus, TripReason)
 
 
 class TestCircuitBreakerConfig:
@@ -161,6 +156,7 @@ class TestCircuitBreaker:
         bot_id: uuid4,
     ) -> None:
         """Orders at rate limit should be blocked."""
+
         # Mock 50 orders in last minute (at limit)
         async def mock_get(key: str):
             if "orders" in key:
@@ -186,6 +182,7 @@ class TestCircuitBreaker:
         bot_id: uuid4,
     ) -> None:
         """Orders over rate limit should be blocked and trip circuit."""
+
         # Mock 60 orders in last minute (over limit)
         async def mock_get(key: str):
             if "orders" in key:
@@ -228,6 +225,7 @@ class TestCircuitBreaker:
         bot_id: uuid4,
     ) -> None:
         """Orders under loss limit should be allowed."""
+
         # Mock 2% loss (under 5%)
         async def mock_get(key: str):
             if "loss" in key:
@@ -252,6 +250,7 @@ class TestCircuitBreaker:
         bot_id: uuid4,
     ) -> None:
         """Orders at loss limit should be blocked."""
+
         # Mock 5% loss (at limit)
         async def mock_get(key: str):
             if "loss" in key:
@@ -277,6 +276,7 @@ class TestCircuitBreaker:
         bot_id: uuid4,
     ) -> None:
         """Orders over loss limit should be blocked."""
+
         # Mock 8% loss (over limit)
         async def mock_get(key: str):
             if "loss" in key:
@@ -447,6 +447,7 @@ class TestCircuitBreaker:
         bot_id: uuid4,
     ) -> None:
         """Should transition to HALF_OPEN when cooldown expires."""
+
         # State is OPEN but cooldown key doesn't exist (expired)
         async def mock_get(key: str):
             if "state" in key:

@@ -374,8 +374,18 @@ class TestFilterOrdersByBalance:
         balance = {"free": {"USDT": 5000, "BTC": 0.1}}
 
         orders = [
-            Order(side="buy", type="limit", price=Decimal("50000"), quantity=Decimal("0.1")),  # needs 5000
-            Order(side="buy", type="limit", price=Decimal("49000"), quantity=Decimal("0.1")),  # needs 4900, no balance left
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("50000"),
+                quantity=Decimal("0.1"),
+            ),  # needs 5000
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("49000"),
+                quantity=Decimal("0.1"),
+            ),  # needs 4900, no balance left
         ]
 
         result = engine._filter_orders_by_balance(
@@ -396,9 +406,24 @@ class TestFilterOrdersByBalance:
         balance = {"free": {"USDT": 5500, "BTC": 0.1}}
 
         orders = [
-            Order(side="buy", type="limit", price=Decimal("48000"), quantity=Decimal("0.1")),  # far
-            Order(side="buy", type="limit", price=Decimal("50000"), quantity=Decimal("0.1")),  # closest
-            Order(side="buy", type="limit", price=Decimal("49000"), quantity=Decimal("0.1")),  # middle
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("48000"),
+                quantity=Decimal("0.1"),
+            ),  # far
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("50000"),
+                quantity=Decimal("0.1"),
+            ),  # closest
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("49000"),
+                quantity=Decimal("0.1"),
+            ),  # middle
         ]
 
         result = engine._filter_orders_by_balance(
@@ -419,7 +444,12 @@ class TestFilterOrdersByBalance:
         balance = {"free": {"USDT": 10000, "BTC": 0.05}}
 
         orders = [
-            Order(side="sell", type="limit", price=Decimal("50000"), quantity=Decimal("0.1")),  # wants 0.1, have 0.05
+            Order(
+                side="sell",
+                type="limit",
+                price=Decimal("50000"),
+                quantity=Decimal("0.1"),
+            ),  # wants 0.1, have 0.05
         ]
 
         result = engine._filter_orders_by_balance(
@@ -440,7 +470,12 @@ class TestFilterOrdersByBalance:
         balance = {"free": {"USDT": 10000, "BTC": 0.1}}
 
         orders = [
-            Order(side="buy", type="limit", price=Decimal("50000"), quantity=Decimal("0.0001")),  # notional = 5 < 10
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("50000"),
+                quantity=Decimal("0.0001"),
+            ),  # notional = 5 < 10
         ]
 
         result = engine._filter_orders_by_balance(
@@ -457,8 +492,18 @@ class TestFilterOrdersByBalance:
     def test_none_balance_returns_all_orders(self, engine):
         """Test that None balance returns all orders unchanged."""
         orders = [
-            Order(side="buy", type="limit", price=Decimal("50000"), quantity=Decimal("0.1")),
-            Order(side="sell", type="limit", price=Decimal("51000"), quantity=Decimal("0.1")),
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("50000"),
+                quantity=Decimal("0.1"),
+            ),
+            Order(
+                side="sell",
+                type="limit",
+                price=Decimal("51000"),
+                quantity=Decimal("0.1"),
+            ),
         ]
 
         result = engine._filter_orders_by_balance(
@@ -477,7 +522,12 @@ class TestFilterOrdersByBalance:
         engine.config.symbol = "BTCUSDT"  # No slash
 
         orders = [
-            Order(side="buy", type="limit", price=Decimal("50000"), quantity=Decimal("0.1")),
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("50000"),
+                quantity=Decimal("0.1"),
+            ),
         ]
 
         result = engine._filter_orders_by_balance(
@@ -497,7 +547,12 @@ class TestFilterOrdersByBalance:
         balance = {"free": {"USDT": 10000, "BTC": 0.1}}
 
         orders = [
-            Order(side="buy", type="limit", price=Decimal("50000"), quantity=Decimal("0.12345")),
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("50000"),
+                quantity=Decimal("0.12345"),
+            ),
         ]
 
         result = engine._filter_orders_by_balance(
@@ -518,7 +573,12 @@ class TestFilterOrdersByBalance:
         balance = {"free": {"USDT": 10000, "BTC": 0.1}}
 
         orders = [
-            Order(side="buy", type="limit", price=Decimal("50000"), quantity=Decimal("0.005")),  # below min_qty
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("50000"),
+                quantity=Decimal("0.005"),
+            ),  # below min_qty
         ]
 
         result = engine._filter_orders_by_balance(
@@ -537,9 +597,24 @@ class TestFilterOrdersByBalance:
         balance = {"free": {"USDT": 10000, "BTC": 0.1}}
 
         orders = [
-            Order(side="buy", type="limit", price=Decimal("50000"), quantity=Decimal("0.1")),  # needs 5000
-            Order(side="buy", type="limit", price=Decimal("49000"), quantity=Decimal("0.1")),  # needs 4900
-            Order(side="buy", type="limit", price=Decimal("48000"), quantity=Decimal("0.1")),  # needs 4800, no balance
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("50000"),
+                quantity=Decimal("0.1"),
+            ),  # needs 5000
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("49000"),
+                quantity=Decimal("0.1"),
+            ),  # needs 4900
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("48000"),
+                quantity=Decimal("0.1"),
+            ),  # needs 4800, no balance
         ]
 
         result = engine._filter_orders_by_balance(
@@ -559,8 +634,18 @@ class TestFilterOrdersByBalance:
         balance = {"free": {"USDT": 10000, "BTC": 0.15}}
 
         orders = [
-            Order(side="sell", type="limit", price=Decimal("50000"), quantity=Decimal("0.1")),  # needs 0.1 BTC
-            Order(side="sell", type="limit", price=Decimal("51000"), quantity=Decimal("0.1")),  # needs 0.1 BTC, only 0.05 left
+            Order(
+                side="sell",
+                type="limit",
+                price=Decimal("50000"),
+                quantity=Decimal("0.1"),
+            ),  # needs 0.1 BTC
+            Order(
+                side="sell",
+                type="limit",
+                price=Decimal("51000"),
+                quantity=Decimal("0.1"),
+            ),  # needs 0.1 BTC, only 0.05 left
         ]
 
         result = engine._filter_orders_by_balance(

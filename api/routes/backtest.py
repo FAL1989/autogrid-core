@@ -94,7 +94,9 @@ async def run_backtest(
     """
     service = BacktestService(db)
 
-    start_dt = datetime.combine(request.start_date, time.min).replace(tzinfo=timezone.utc)
+    start_dt = datetime.combine(request.start_date, time.min).replace(
+        tzinfo=timezone.utc
+    )
     end_dt = datetime.combine(request.end_date, time.max).replace(tzinfo=timezone.utc)
 
     try:

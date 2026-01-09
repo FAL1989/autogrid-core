@@ -64,9 +64,9 @@ async def bot_performance(
         select(
             Trade.bot_id.label("bot_id"),
             func.count().label("total_trades"),
-            func.sum(
-                case((Trade.realized_pnl > 0, 1), else_=0)
-            ).label("winning_trades"),
+            func.sum(case((Trade.realized_pnl > 0, 1), else_=0)).label(
+                "winning_trades"
+            ),
             func.sum(Trade.price * Trade.quantity).label("total_volume"),
         )
         .join(Bot, Bot.id == Trade.bot_id)
@@ -74,9 +74,7 @@ async def bot_performance(
         .group_by(Trade.bot_id)
     )
     trades_result = await db.execute(trades_stmt)
-    trade_stats = {
-        row.bot_id: row for row in trades_result.mappings().all()
-    }
+    trade_stats = {row.bot_id: row for row in trades_result.mappings().all()}
 
     bots_stmt = select(Bot).where(Bot.user_id == current_user.id)
     bots_result = await db.execute(bots_stmt)
@@ -121,9 +119,9 @@ async def strategy_comparison(
         select(
             Bot.strategy.label("strategy"),
             func.count(Trade.id).label("total_trades"),
-            func.sum(
-                case((Trade.realized_pnl > 0, 1), else_=0)
-            ).label("winning_trades"),
+            func.sum(case((Trade.realized_pnl > 0, 1), else_=0)).label(
+                "winning_trades"
+            ),
             func.sum(Trade.price * Trade.quantity).label("total_volume"),
         )
         .join(Bot, Bot.id == Trade.bot_id)
@@ -131,17 +129,14 @@ async def strategy_comparison(
         .group_by(Bot.strategy)
     )
     trade_result = await db.execute(trade_stmt)
-    trade_stats = {
-        row.strategy: row for row in trade_result.mappings().all()
-    }
+    trade_stats = {row.strategy: row for row in trade_result.mappings().all()}
 
     strategies = []
     for strategy in ["grid", "dca"]:
         strategy_bots = [bot for bot in bots if bot.strategy == strategy]
         total_bots = len(strategy_bots)
         total_pnl = sum(
-            float(bot.realized_pnl + bot.unrealized_pnl)
-            for bot in strategy_bots
+            float(bot.realized_pnl + bot.unrealized_pnl) for bot in strategy_bots
         )
 
         stats = trade_stats.get(strategy)
@@ -184,7 +179,9 @@ async def export_trades_csv(
 
     def _generate():
         buffer = StringIO()
-        buffer.write("timestamp,bot_id,bot_name,strategy,symbol,side,price,quantity,fee,fee_currency,realized_pnl\n")
+        buffer.write(
+            "timestamp,bot_id,bot_name,strategy,symbol,side,price,quantity,fee,fee_currency,realized_pnl\n"
+        )
         yield buffer.getvalue()
         buffer.seek(0)
         buffer.truncate(0)

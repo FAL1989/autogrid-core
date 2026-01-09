@@ -168,7 +168,9 @@ class GridStrategy(BaseStrategy):
                 target_level.position_qty = total_qty
 
             target_level.buy_order_id = target_level.buy_order_id or level.buy_order_id
-            target_level.sell_order_id = target_level.sell_order_id or level.sell_order_id
+            target_level.sell_order_id = (
+                target_level.sell_order_id or level.sell_order_id
+            )
 
     def calculate_orders(
         self,
@@ -455,7 +457,9 @@ class GridStrategy(BaseStrategy):
                 "index": level.index,
                 "price": float(level.price),
                 "position_qty": float(level.position_qty),
-                "avg_buy_price": float(level.avg_buy_price) if level.avg_buy_price else None,
+                "avg_buy_price": (
+                    float(level.avg_buy_price) if level.avg_buy_price else None
+                ),
                 "has_position": level.has_position(),
             }
             for level in self._levels.values()
@@ -464,25 +468,27 @@ class GridStrategy(BaseStrategy):
     def get_stats(self) -> dict:
         """Get grid strategy statistics."""
         base_stats = super().get_stats()
-        base_stats.update({
-            "lower_price": float(self.lower_price),
-            "upper_price": float(self.upper_price),
-            "grid_count": self.grid_count,
-            "grid_spacing": float(self.grid_spacing),
-            "amount_per_grid": float(self.amount_per_grid),
-            "total_position": float(self.get_total_position()),
-            "average_entry_price": float(self.get_average_entry_price()),
-            "unrealized_pnl": float(self.get_unrealized_pnl(self._current_price)),
-            "levels_with_position": sum(
-                1 for level in self._levels.values() if level.has_position()
-            ),
-            "dynamic_range_enabled": self.dynamic_range_enabled,
-            "atr_period": self.atr_period,
-            "atr_multiplier": float(self.atr_multiplier),
-            "atr_timeframe": self.atr_timeframe,
-            "cooldown_minutes": self.cooldown_minutes,
-            "recenter_minutes": self.recenter_minutes,
-        })
+        base_stats.update(
+            {
+                "lower_price": float(self.lower_price),
+                "upper_price": float(self.upper_price),
+                "grid_count": self.grid_count,
+                "grid_spacing": float(self.grid_spacing),
+                "amount_per_grid": float(self.amount_per_grid),
+                "total_position": float(self.get_total_position()),
+                "average_entry_price": float(self.get_average_entry_price()),
+                "unrealized_pnl": float(self.get_unrealized_pnl(self._current_price)),
+                "levels_with_position": sum(
+                    1 for level in self._levels.values() if level.has_position()
+                ),
+                "dynamic_range_enabled": self.dynamic_range_enabled,
+                "atr_period": self.atr_period,
+                "atr_multiplier": float(self.atr_multiplier),
+                "atr_timeframe": self.atr_timeframe,
+                "cooldown_minutes": self.cooldown_minutes,
+                "recenter_minutes": self.recenter_minutes,
+            }
+        )
         return base_stats
 
 

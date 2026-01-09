@@ -242,7 +242,8 @@ class BinanceWebSocket(WebSocketHandler):
                 "quantity": data.get("q"),
                 "filledQuantity": data.get("z"),
                 "lastFilledQuantity": data.get("l"),
-                "avgPrice": data.get("ap") or data.get("L"),  # Average or last fill price
+                "avgPrice": data.get("ap")
+                or data.get("L"),  # Average or last fill price
                 "commission": data.get("n"),
                 "commissionAsset": data.get("N"),
                 "fee": data.get("n"),
@@ -317,7 +318,9 @@ class BinanceWebSocket(WebSocketHandler):
         params = {"listenKey": self._listen_key}
 
         try:
-            async with self._session.delete(url, headers=headers, params=params) as resp:
+            async with self._session.delete(
+                url, headers=headers, params=params
+            ) as resp:
                 if resp.status == 200:
                     logger.debug("Listen key deleted")
         except Exception:

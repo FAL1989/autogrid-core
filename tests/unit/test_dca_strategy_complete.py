@@ -209,7 +209,9 @@ class TestDCATimeBased:
             interval="hourly",
         )
         # Simulate last buy 61 minutes ago
-        strategy._last_buy_time = datetime.now(timezone.utc) - timedelta(hours=1, minutes=1)
+        strategy._last_buy_time = datetime.now(timezone.utc) - timedelta(
+            hours=1, minutes=1
+        )
 
         assert strategy._should_buy_by_time() is True
 
@@ -488,11 +490,15 @@ class TestDCAOnOrderFilled:
         )
 
         # First buy at 50000
-        order1 = Order(side="buy", type="market", price=Decimal("50000"), quantity=Decimal("0.002"))
+        order1 = Order(
+            side="buy", type="market", price=Decimal("50000"), quantity=Decimal("0.002")
+        )
         strategy.on_order_filled(order1, Decimal("50000"))
 
         # Second buy at 48000
-        order2 = Order(side="buy", type="market", price=Decimal("48000"), quantity=Decimal("0.002"))
+        order2 = Order(
+            side="buy", type="market", price=Decimal("48000"), quantity=Decimal("0.002")
+        )
         strategy.on_order_filled(order2, Decimal("48000"))
 
         # Total spent: 100 + 96 = 196
@@ -566,7 +572,9 @@ class TestDCAOnOrderFilled:
         strategy._total_quantity = Decimal("0.02")
         strategy._highest_price = Decimal("55000")
 
-        order = Order(side="sell", type="market", price=Decimal("50000"), quantity=Decimal("0.02"))
+        order = Order(
+            side="sell", type="market", price=Decimal("50000"), quantity=Decimal("0.02")
+        )
         strategy.on_order_filled(order, Decimal("50000"))
 
         assert strategy._total_quantity == Decimal("0")

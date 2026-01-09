@@ -157,6 +157,7 @@ def auth_logout(ctx: typer.Context) -> None:
     else:
         typer.echo("Logged out. Tokens cleared from config.")
 
+
 @config_app.command("show")
 def config_show(ctx: typer.Context) -> None:
     settings: Settings = ctx.obj
@@ -188,7 +189,9 @@ def config_get(
 ) -> None:
     settings: Settings = ctx.obj
     if key == "api-url":
-        api_url = settings.store.get_profile_api_url(settings.profile) or DEFAULT_API_URL
+        api_url = (
+            settings.store.get_profile_api_url(settings.profile) or DEFAULT_API_URL
+        )
         if settings.json_output:
             print_json({"api_url": api_url})
         else:
@@ -262,7 +265,16 @@ def bots_list(
         for bot in data.get("bots", [])
     ]
     print_table(
-        ["ID", "Name", "Strategy", "Symbol", "Status", "Realized", "Unrealized", "Updated"],
+        [
+            "ID",
+            "Name",
+            "Strategy",
+            "Symbol",
+            "Status",
+            "Realized",
+            "Unrealized",
+            "Updated",
+        ],
         rows,
         title="Bots",
     )
@@ -318,7 +330,9 @@ def bots_create(
     strategy = strategy.lower()
     config: dict[str, Any]
     if strategy == "grid":
-        missing = [val is None for val in (lower_price, upper_price, grid_count, investment)]
+        missing = [
+            val is None for val in (lower_price, upper_price, grid_count, investment)
+        ]
         if any(missing):
             typer.secho(
                 "Grid requires --lower-price, --upper-price, --grid-count, --investment.",
@@ -660,7 +674,9 @@ def credentials_list(
 
 
 @credentials_app.command("delete")
-def credentials_delete(ctx: typer.Context, credential_id: str = typer.Argument(...)) -> None:
+def credentials_delete(
+    ctx: typer.Context, credential_id: str = typer.Argument(...)
+) -> None:
     settings: Settings = ctx.obj
     _require_auth(settings)
     try:
@@ -675,7 +691,9 @@ def credentials_delete(ctx: typer.Context, credential_id: str = typer.Argument(.
 
 
 @credentials_app.command("test")
-def credentials_test(ctx: typer.Context, credential_id: str = typer.Argument(...)) -> None:
+def credentials_test(
+    ctx: typer.Context, credential_id: str = typer.Argument(...)
+) -> None:
     settings: Settings = ctx.obj
     _require_auth(settings)
     try:
@@ -862,7 +880,16 @@ def reports_bots(ctx: typer.Context) -> None:
         for bot in data.get("bots", [])
     ]
     print_table(
-        ["ID", "Name", "Strategy", "Symbol", "Status", "Realized", "Unrealized", "Trades"],
+        [
+            "ID",
+            "Name",
+            "Strategy",
+            "Symbol",
+            "Status",
+            "Realized",
+            "Unrealized",
+            "Trades",
+        ],
         rows,
         title="Bot Performance",
     )

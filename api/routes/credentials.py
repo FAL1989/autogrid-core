@@ -15,10 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.core.database import get_db
 from api.core.dependencies import get_current_user
 from api.models.orm import User
-from api.services.credential_service import (
-    CredentialService,
-    CredentialValidationError,
-)
+from api.services.credential_service import (CredentialService,
+                                             CredentialValidationError)
 
 router = APIRouter()
 
@@ -400,9 +398,7 @@ async def get_balance(
         )
 
     try:
-        balance = await credential_service.fetch_balance(
-            credential_id, current_user.id
-        )
+        balance = await credential_service.fetch_balance(credential_id, current_user.id)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

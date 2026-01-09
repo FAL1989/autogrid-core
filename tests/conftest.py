@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 # Set test environment variables BEFORE any api imports
 from cryptography.fernet import Fernet
+
 if not os.getenv("ENCRYPTION_KEY"):
     os.environ["ENCRYPTION_KEY"] = Fernet.generate_key().decode()
 if not os.getenv("JWT_SECRET"):
@@ -20,12 +21,8 @@ if not os.getenv("JWT_SECRET"):
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy.ext.asyncio import (AsyncEngine, AsyncSession,
+                                    async_sessionmaker, create_async_engine)
 from sqlalchemy.pool import NullPool
 
 from api.core.database import Base, get_db
@@ -37,7 +34,7 @@ from bot.strategies.base import Order
 # Test database URL (use a separate test database)
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/autogrid_test"
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/autogrid_test",
 )
 
 
@@ -56,10 +53,18 @@ def sample_order() -> Order:
 def sample_orders() -> list[Order]:
     """Create multiple sample orders for testing."""
     return [
-        Order(side="buy", type="limit", price=Decimal("49000"), quantity=Decimal("0.1")),
-        Order(side="buy", type="limit", price=Decimal("48000"), quantity=Decimal("0.1")),
-        Order(side="sell", type="limit", price=Decimal("51000"), quantity=Decimal("0.1")),
-        Order(side="sell", type="limit", price=Decimal("52000"), quantity=Decimal("0.1")),
+        Order(
+            side="buy", type="limit", price=Decimal("49000"), quantity=Decimal("0.1")
+        ),
+        Order(
+            side="buy", type="limit", price=Decimal("48000"), quantity=Decimal("0.1")
+        ),
+        Order(
+            side="sell", type="limit", price=Decimal("51000"), quantity=Decimal("0.1")
+        ),
+        Order(
+            side="sell", type="limit", price=Decimal("52000"), quantity=Decimal("0.1")
+        ),
     ]
 
 
@@ -268,7 +273,9 @@ async def auth_client(
 
 
 @pytest_asyncio.fixture
-async def test_credential(db_session: AsyncSession, test_user: User) -> ExchangeCredential:
+async def test_credential(
+    db_session: AsyncSession, test_user: User
+) -> ExchangeCredential:
     """Create a test exchange credential."""
     credential = ExchangeCredential(
         user_id=test_user.id,

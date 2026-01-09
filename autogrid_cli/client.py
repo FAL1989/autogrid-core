@@ -50,7 +50,9 @@ class ApiClient:
         response = self._request_once(method, path, json_body=json_body, params=params)
         if response.status_code == 401 and self.refresh_token:
             self._refresh_tokens()
-            response = self._request_once(method, path, json_body=json_body, params=params)
+            response = self._request_once(
+                method, path, json_body=json_body, params=params
+            )
         return self._handle_response(response)
 
     def request_raw(

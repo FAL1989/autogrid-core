@@ -35,9 +35,7 @@ class BotService:
         Returns:
             Bot if found, None otherwise.
         """
-        result = await self.db.execute(
-            select(Bot).where(Bot.id == bot_id)
-        )
+        result = await self.db.execute(select(Bot).where(Bot.id == bot_id))
         return result.scalar_one_or_none()
 
     async def get_by_id_for_user(self, bot_id: UUID, user_id: UUID) -> Bot | None:
@@ -182,7 +180,9 @@ class BotService:
             .where(Bot.id == bot_id)
             .values(
                 realized_pnl=realized_pnl,
-                unrealized_pnl=unrealized_pnl if unrealized_pnl is not None else Decimal("0"),
+                unrealized_pnl=(
+                    unrealized_pnl if unrealized_pnl is not None else Decimal("0")
+                ),
             )
         )
         result = await self.db.execute(stmt)
@@ -287,11 +287,7 @@ class BotService:
         Returns:
             True if updated, False if bot not found.
         """
-        stmt = (
-            update(Bot)
-            .where(Bot.id == bot_id)
-            .values(strategy_state=state)
-        )
+        stmt = update(Bot).where(Bot.id == bot_id).values(strategy_state=state)
         result = await self.db.execute(stmt)
         await self.db.flush()
         return result.rowcount > 0

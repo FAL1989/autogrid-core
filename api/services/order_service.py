@@ -11,7 +11,7 @@ from uuid import UUID
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.models.orm import Order, Trade, Bot
+from api.models.orm import Bot, Order, Trade
 
 
 class OrderService:
@@ -36,9 +36,7 @@ class OrderService:
         Returns:
             Order if found, None otherwise.
         """
-        result = await self.db.execute(
-            select(Order).where(Order.id == order_id)
-        )
+        result = await self.db.execute(select(Order).where(Order.id == order_id))
         return result.scalar_one_or_none()
 
     async def get_by_id_for_user(
@@ -84,7 +82,9 @@ class OrderService:
         """
         # Base query
         query = select(Order).where(Order.bot_id == bot_id)
-        count_query = select(func.count()).select_from(Order).where(Order.bot_id == bot_id)
+        count_query = (
+            select(func.count()).select_from(Order).where(Order.bot_id == bot_id)
+        )
 
         if status:
             query = query.where(Order.status == status)
@@ -96,10 +96,7 @@ class OrderService:
 
         # Get paginated orders
         result = await self.db.execute(
-            query
-            .order_by(Order.created_at.desc())
-            .limit(limit)
-            .offset(offset)
+            query.order_by(Order.created_at.desc()).limit(limit).offset(offset)
         )
         orders = list(result.scalars().all())
 
@@ -336,15 +333,11 @@ class OrderService:
         trade_stats = await self.db.execute(
             select(
                 func.count(Trade.id).label("total_trades"),
-                func.sum(
-                    case((Trade.side == "buy", 1), else_=0)
-                ).label("buy_count"),
-                func.sum(
-                    case((Trade.side == "sell", 1), else_=0)
-                ).label("sell_count"),
-                func.sum(
-                    case((Trade.realized_pnl > 0, 1), else_=0)
-                ).label("winning_trades"),
+                func.sum(case((Trade.side == "buy", 1), else_=0)).label("buy_count"),
+                func.sum(case((Trade.side == "sell", 1), else_=0)).label("sell_count"),
+                func.sum(case((Trade.realized_pnl > 0, 1), else_=0)).label(
+                    "winning_trades"
+                ),
                 func.sum(Trade.price * Trade.quantity).label("total_volume"),
                 func.sum(Trade.fee).label("total_fees"),
                 func.sum(Trade.realized_pnl).label("total_pnl"),

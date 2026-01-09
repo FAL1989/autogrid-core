@@ -1,8 +1,8 @@
 """Tests for CCXT connector sandbox handling."""
 
+import sys
 import types
 from unittest.mock import MagicMock
-import sys
 
 import pytest
 

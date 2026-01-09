@@ -68,12 +68,8 @@ class DCAConfig(BaseModel):
     trigger_drop: float | None = Field(
         None, ge=0, le=100, description="Price drop % to trigger extra buy"
     )
-    take_profit: float | None = Field(
-        None, ge=0, le=1000, description="Take profit %"
-    )
-    investment: float | None = Field(
-        None, gt=0, description="Total investment amount"
-    )
+    take_profit: float | None = Field(None, ge=0, le=1000, description="Take profit %")
+    investment: float | None = Field(None, gt=0, description="Total investment amount")
 
 
 class BotCreate(BaseModel):

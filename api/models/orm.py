@@ -8,7 +8,8 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, text
+from sqlalchemy import (Boolean, DateTime, ForeignKey, Integer, Numeric,
+                        String, Text, text)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -210,7 +211,9 @@ class Bot(Base):
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="bots")
-    credential: Mapped["ExchangeCredential | None"] = relationship(back_populates="bots")
+    credential: Mapped["ExchangeCredential | None"] = relationship(
+        back_populates="bots"
+    )
     orders: Mapped[list["Order"]] = relationship(
         back_populates="bot",
         cascade="all, delete-orphan",

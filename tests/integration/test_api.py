@@ -240,9 +240,7 @@ class TestCredentialsEndpoints:
 class TestOrdersEndpoints:
     """Tests for orders management endpoints."""
 
-    async def test_list_orders_requires_auth(
-        self, async_client: AsyncClient
-    ) -> None:
+    async def test_list_orders_requires_auth(self, async_client: AsyncClient) -> None:
         """Test listing orders requires authentication."""
         from uuid import uuid4
 
@@ -251,9 +249,7 @@ class TestOrdersEndpoints:
 
         assert response.status_code == 401
 
-    async def test_list_orders_bot_not_found(
-        self, auth_client: AsyncClient
-    ) -> None:
+    async def test_list_orders_bot_not_found(self, auth_client: AsyncClient) -> None:
         """Test listing orders for non-existent bot."""
         from uuid import uuid4
 
@@ -280,7 +276,12 @@ class TestOrdersEndpoints:
             strategy="grid",
             exchange="binance",
             symbol="BTC/USDT",
-            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            config={
+                "lower_price": 45000,
+                "upper_price": 55000,
+                "grid_count": 10,
+                "investment": 1000,
+            },
             status="stopped",
         )
         db_session.add(bot)
@@ -314,7 +315,12 @@ class TestOrdersEndpoints:
             strategy="grid",
             exchange="binance",
             symbol="BTC/USDT",
-            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            config={
+                "lower_price": 45000,
+                "upper_price": 55000,
+                "grid_count": 10,
+                "investment": 1000,
+            },
             status="stopped",
         )
         db_session.add(bot)
@@ -371,7 +377,12 @@ class TestOrdersEndpoints:
             strategy="grid",
             exchange="binance",
             symbol="BTC/USDT",
-            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            config={
+                "lower_price": 45000,
+                "upper_price": 55000,
+                "grid_count": 10,
+                "investment": 1000,
+            },
             status="stopped",
         )
         db_session.add(bot)
@@ -402,7 +413,9 @@ class TestOrdersEndpoints:
         await db_session.flush()
 
         # Filter by open status
-        response = await auth_client.get(f"/api/v1/orders/bots/{bot.id}/orders?status=open")
+        response = await auth_client.get(
+            f"/api/v1/orders/bots/{bot.id}/orders?status=open"
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -429,7 +442,12 @@ class TestOrdersEndpoints:
             strategy="grid",
             exchange="binance",
             symbol="BTC/USDT",
-            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            config={
+                "lower_price": 45000,
+                "upper_price": 55000,
+                "grid_count": 10,
+                "investment": 1000,
+            },
             status="running",
         )
         db_session.add(bot)
@@ -498,7 +516,12 @@ class TestOrdersEndpoints:
             strategy="grid",
             exchange="binance",
             symbol="BTC/USDT",
-            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            config={
+                "lower_price": 45000,
+                "upper_price": 55000,
+                "grid_count": 10,
+                "investment": 1000,
+            },
             status="stopped",
         )
         db_session.add(bot)
@@ -532,7 +555,12 @@ class TestOrdersEndpoints:
             strategy="grid",
             exchange="binance",
             symbol="BTC/USDT",
-            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            config={
+                "lower_price": 45000,
+                "upper_price": 55000,
+                "grid_count": 10,
+                "investment": 1000,
+            },
             status="running",
         )
         db_session.add(bot)
@@ -592,7 +620,12 @@ class TestOrdersEndpoints:
             strategy="grid",
             exchange="binance",
             symbol="BTC/USDT",
-            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            config={
+                "lower_price": 45000,
+                "upper_price": 55000,
+                "grid_count": 10,
+                "investment": 1000,
+            },
             status="running",
         )
         db_session.add(bot)
@@ -600,24 +633,61 @@ class TestOrdersEndpoints:
 
         # Create orders with different statuses
         orders = [
-            Order(bot_id=bot.id, symbol="BTC/USDT", side="buy", type="limit",
-                  price=Decimal("49000"), quantity=Decimal("0.1"), filled_quantity=Decimal("0"), status="open"),
-            Order(bot_id=bot.id, symbol="BTC/USDT", side="buy", type="limit",
-                  price=Decimal("48000"), quantity=Decimal("0.1"), filled_quantity=Decimal("0.1"), status="filled"),
-            Order(bot_id=bot.id, symbol="BTC/USDT", side="sell", type="limit",
-                  price=Decimal("51000"), quantity=Decimal("0.1"), filled_quantity=Decimal("0.1"), status="filled"),
+            Order(
+                bot_id=bot.id,
+                symbol="BTC/USDT",
+                side="buy",
+                type="limit",
+                price=Decimal("49000"),
+                quantity=Decimal("0.1"),
+                filled_quantity=Decimal("0"),
+                status="open",
+            ),
+            Order(
+                bot_id=bot.id,
+                symbol="BTC/USDT",
+                side="buy",
+                type="limit",
+                price=Decimal("48000"),
+                quantity=Decimal("0.1"),
+                filled_quantity=Decimal("0.1"),
+                status="filled",
+            ),
+            Order(
+                bot_id=bot.id,
+                symbol="BTC/USDT",
+                side="sell",
+                type="limit",
+                price=Decimal("51000"),
+                quantity=Decimal("0.1"),
+                filled_quantity=Decimal("0.1"),
+                status="filled",
+            ),
         ]
         db_session.add_all(orders)
 
         # Create trades with different timestamps
         now = datetime.now(timezone.utc)
         trades = [
-            Trade(bot_id=bot.id, symbol="BTC/USDT", side="buy",
-                  price=Decimal("48000"), quantity=Decimal("0.1"), fee=Decimal("0.01"),
-                  timestamp=now - timedelta(seconds=10)),
-            Trade(bot_id=bot.id, symbol="BTC/USDT", side="sell",
-                  price=Decimal("51000"), quantity=Decimal("0.1"), fee=Decimal("0.01"), realized_pnl=Decimal("300"),
-                  timestamp=now),
+            Trade(
+                bot_id=bot.id,
+                symbol="BTC/USDT",
+                side="buy",
+                price=Decimal("48000"),
+                quantity=Decimal("0.1"),
+                fee=Decimal("0.01"),
+                timestamp=now - timedelta(seconds=10),
+            ),
+            Trade(
+                bot_id=bot.id,
+                symbol="BTC/USDT",
+                side="sell",
+                price=Decimal("51000"),
+                quantity=Decimal("0.1"),
+                fee=Decimal("0.01"),
+                realized_pnl=Decimal("300"),
+                timestamp=now,
+            ),
         ]
         db_session.add_all(trades)
         await db_session.flush()
@@ -656,7 +726,12 @@ class TestOrdersEndpoints:
             strategy="grid",
             exchange="binance",
             symbol="BTC/USDT",
-            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            config={
+                "lower_price": 45000,
+                "upper_price": 55000,
+                "grid_count": 10,
+                "investment": 1000,
+            },
             status="stopped",
         )
         db_session.add(bot)
@@ -689,7 +764,12 @@ class TestOrdersEndpoints:
             strategy="grid",
             exchange="binance",
             symbol="BTC/USDT",
-            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            config={
+                "lower_price": 45000,
+                "upper_price": 55000,
+                "grid_count": 10,
+                "investment": 1000,
+            },
             status="running",
         )
         db_session.add(bot)
@@ -738,7 +818,12 @@ class TestOrdersEndpoints:
             strategy="grid",
             exchange="binance",
             symbol="BTC/USDT",
-            config={"lower_price": 45000, "upper_price": 55000, "grid_count": 10, "investment": 1000},
+            config={
+                "lower_price": 45000,
+                "upper_price": 55000,
+                "grid_count": 10,
+                "investment": 1000,
+            },
             status="running",
         )
         db_session.add(bot)

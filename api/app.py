@@ -78,7 +78,9 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
     app.include_router(bots.router, prefix="/api/v1/bots", tags=["Bots"])
     app.include_router(backtest.router, prefix="/api/v1/backtest", tags=["Backtesting"])
-    app.include_router(credentials.router, prefix="/api/v1/credentials", tags=["Credentials"])
+    app.include_router(
+        credentials.router, prefix="/api/v1/credentials", tags=["Credentials"]
+    )
     app.include_router(orders.router, prefix="/api/v1/orders", tags=["Orders"])
     app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
     app.include_router(ws.router, tags=["WebSocket"])

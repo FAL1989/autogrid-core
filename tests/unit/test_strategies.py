@@ -33,7 +33,9 @@ class TestGridStrategy:
 
     def test_init_invalid_price_range(self) -> None:
         """Test that invalid price range raises error."""
-        with pytest.raises(ValueError, match="lower_price must be less than upper_price"):
+        with pytest.raises(
+            ValueError, match="lower_price must be less than upper_price"
+        ):
             GridStrategy(
                 symbol="BTC/USDT",
                 investment=Decimal("1000"),

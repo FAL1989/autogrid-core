@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import os
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
-import tomllib
 
 DEFAULT_API_URL = "http://localhost:8000"
 DEFAULT_PROFILE = "default"
@@ -30,11 +29,7 @@ def _default_config_path() -> Path:
 
     if sys.platform == "darwin":
         return (
-            Path.home()
-            / "Library"
-            / "Application Support"
-            / "autogrid"
-            / "config.toml"
+            Path.home() / "Library" / "Application Support" / "autogrid" / "config.toml"
         )
 
     return Path.home() / ".config" / "autogrid" / "config.toml"
@@ -154,7 +149,9 @@ class ConfigStore:
             legacy_refresh if isinstance(legacy_refresh, str) else None,
         )
 
-    def set_profile_tokens(self, profile: str, access_token: str, refresh_token: str) -> None:
+    def set_profile_tokens(
+        self, profile: str, access_token: str, refresh_token: str
+    ) -> None:
         self.data.setdefault("profile", {})
         if not isinstance(self.data["profile"], dict):
             self.data["profile"] = {}

@@ -21,6 +21,7 @@ class TestMaybeRehydrateRunningBots:
     def reset_global_state(self):
         """Reset global state before each test."""
         import bot.tasks as tasks_module
+
         tasks_module._rehydrate_attempted = False
         tasks_module._running_bots = {}
         yield
@@ -95,6 +96,7 @@ class TestRehydrateRunningBots:
     def reset_global_state(self):
         """Reset global state before each test."""
         import bot.tasks as tasks_module
+
         tasks_module._rehydrate_attempted = False
         tasks_module._running_bots = {}
         yield
@@ -124,12 +126,20 @@ class TestRehydrateRunningBots:
         start_calls = []
 
         async def mock_start_bot(bot_id, rehydrate=False, broadcast=True):
-            start_calls.append({"bot_id": bot_id, "rehydrate": rehydrate, "broadcast": broadcast})
+            start_calls.append(
+                {"bot_id": bot_id, "rehydrate": rehydrate, "broadcast": broadcast}
+            )
             return {"status": "running"}
 
-        with patch("sqlalchemy.ext.asyncio.create_async_engine", return_value=mock_engine):
-            with patch("sqlalchemy.orm.sessionmaker", return_value=lambda: mock_session):
-                with patch.object(tasks_module, "_start_bot_async", side_effect=mock_start_bot):
+        with patch(
+            "sqlalchemy.ext.asyncio.create_async_engine", return_value=mock_engine
+        ):
+            with patch(
+                "sqlalchemy.orm.sessionmaker", return_value=lambda: mock_session
+            ):
+                with patch.object(
+                    tasks_module, "_start_bot_async", side_effect=mock_start_bot
+                ):
                     result = await tasks_module._rehydrate_running_bots()
 
         # Should have called _start_bot_async for each bot
@@ -169,9 +179,15 @@ class TestRehydrateRunningBots:
             start_calls.append(bot_id)
             return {"status": "running"}
 
-        with patch("sqlalchemy.ext.asyncio.create_async_engine", return_value=mock_engine):
-            with patch("sqlalchemy.orm.sessionmaker", return_value=lambda: mock_session):
-                with patch.object(tasks_module, "_start_bot_async", side_effect=mock_start_bot):
+        with patch(
+            "sqlalchemy.ext.asyncio.create_async_engine", return_value=mock_engine
+        ):
+            with patch(
+                "sqlalchemy.orm.sessionmaker", return_value=lambda: mock_session
+            ):
+                with patch.object(
+                    tasks_module, "_start_bot_async", side_effect=mock_start_bot
+                ):
                     result = await tasks_module._rehydrate_running_bots()
 
         # Should only call _start_bot_async for the new bot
@@ -200,9 +216,15 @@ class TestRehydrateRunningBots:
         async def mock_start_bot(bot_id, rehydrate=False, broadcast=True):
             return {"status": "error", "error": "Invalid credentials"}
 
-        with patch("sqlalchemy.ext.asyncio.create_async_engine", return_value=mock_engine):
-            with patch("sqlalchemy.orm.sessionmaker", return_value=lambda: mock_session):
-                with patch.object(tasks_module, "_start_bot_async", side_effect=mock_start_bot):
+        with patch(
+            "sqlalchemy.ext.asyncio.create_async_engine", return_value=mock_engine
+        ):
+            with patch(
+                "sqlalchemy.orm.sessionmaker", return_value=lambda: mock_session
+            ):
+                with patch.object(
+                    tasks_module, "_start_bot_async", side_effect=mock_start_bot
+                ):
                     result = await tasks_module._rehydrate_running_bots()
 
         # Bot with error should not be counted as rehydrated

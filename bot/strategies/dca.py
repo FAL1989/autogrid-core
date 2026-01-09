@@ -52,7 +52,9 @@ class DCAStrategy(BaseStrategy):
             raise ValueError("amount_per_buy must be positive")
         if amount_per_buy > investment:
             raise ValueError("amount_per_buy cannot exceed investment")
-        if trigger_drop_percent is not None and not (Decimal("0") < trigger_drop_percent <= Decimal("100")):
+        if trigger_drop_percent is not None and not (
+            Decimal("0") < trigger_drop_percent <= Decimal("100")
+        ):
             raise ValueError("trigger_drop_percent must be between 0 and 100")
         if take_profit_percent is not None and take_profit_percent <= 0:
             raise ValueError("take_profit_percent must be positive")
@@ -156,7 +158,9 @@ class DCAStrategy(BaseStrategy):
         if self._total_quantity == 0:
             return False
 
-        profit_percent = (current_price - self.average_entry_price) / self.average_entry_price * 100
+        profit_percent = (
+            (current_price - self.average_entry_price) / self.average_entry_price * 100
+        )
         return profit_percent >= self.take_profit_percent
 
     def _create_buy_order(self, price: Decimal) -> Order:
@@ -231,23 +235,26 @@ class DCAStrategy(BaseStrategy):
         - Budget exhausted and no position
         - Position sold (take profit hit)
         """
-        return (
-            self.remaining_budget < self.amount_per_buy
-            and self._total_quantity == 0
-        )
+        return self.remaining_budget < self.amount_per_buy and self._total_quantity == 0
 
     def get_stats(self) -> dict:
         """Get DCA strategy statistics."""
         base_stats = super().get_stats()
-        base_stats.update({
-            "amount_per_buy": float(self.amount_per_buy),
-            "interval": self.interval,
-            "trigger_drop_percent": float(self.trigger_drop_percent) if self.trigger_drop_percent else None,
-            "remaining_budget": float(self.remaining_budget),
-            "average_entry_price": float(self.average_entry_price),
-            "total_quantity": float(self._total_quantity),
-            "total_spent": float(self._total_spent),
-        })
+        base_stats.update(
+            {
+                "amount_per_buy": float(self.amount_per_buy),
+                "interval": self.interval,
+                "trigger_drop_percent": (
+                    float(self.trigger_drop_percent)
+                    if self.trigger_drop_percent
+                    else None
+                ),
+                "remaining_budget": float(self.remaining_budget),
+                "average_entry_price": float(self.average_entry_price),
+                "total_quantity": float(self._total_quantity),
+                "total_spent": float(self._total_spent),
+            }
+        )
         return base_stats
 
     def to_state_dict(self) -> dict:
@@ -258,7 +265,9 @@ class DCAStrategy(BaseStrategy):
             Dictionary with serializable state values.
         """
         return {
-            "last_buy_time": self._last_buy_time.isoformat() if self._last_buy_time else None,
+            "last_buy_time": (
+                self._last_buy_time.isoformat() if self._last_buy_time else None
+            ),
             "last_price": str(self._last_price) if self._last_price else None,
             "highest_price": str(self._highest_price) if self._highest_price else None,
             "total_spent": str(self._total_spent),

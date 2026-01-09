@@ -125,7 +125,9 @@ def decode_token(token: str) -> TokenPayload:
         raise TokenError(f"Missing token field: {e}") from e
 
 
-def verify_token_type(token: str, expected_type: Literal["access", "refresh"]) -> TokenPayload:
+def verify_token_type(
+    token: str, expected_type: Literal["access", "refresh"]
+) -> TokenPayload:
     """
     Decode token and verify its type.
 

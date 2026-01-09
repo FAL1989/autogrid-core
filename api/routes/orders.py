@@ -107,7 +107,9 @@ class CancelOrderResponse(BaseModel):
 @router.get("/bots/{bot_id}/orders", response_model=OrderListResponse)
 async def list_orders(
     bot_id: UUID,
-    order_status: str | None = Query(default=None, description="Filter by status", alias="status"),
+    order_status: str | None = Query(
+        default=None, description="Filter by status", alias="status"
+    ),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_user),
@@ -144,7 +146,9 @@ async def list_orders(
             price=float(order.price) if order.price else None,
             quantity=float(order.quantity),
             filled_quantity=float(order.filled_quantity),
-            average_fill_price=float(order.average_fill_price) if order.average_fill_price else None,
+            average_fill_price=(
+                float(order.average_fill_price) if order.average_fill_price else None
+            ),
             status=order.status,
             created_at=order.created_at,
             updated_at=order.updated_at,
@@ -194,7 +198,9 @@ async def get_open_orders(
             price=float(order.price) if order.price else None,
             quantity=float(order.quantity),
             filled_quantity=float(order.filled_quantity),
-            average_fill_price=float(order.average_fill_price) if order.average_fill_price else None,
+            average_fill_price=(
+                float(order.average_fill_price) if order.average_fill_price else None
+            ),
             status=order.status,
             created_at=order.created_at,
             updated_at=order.updated_at,

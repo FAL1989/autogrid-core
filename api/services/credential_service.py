@@ -114,9 +114,7 @@ class CredentialService:
         validation = await connector.validate_credentials()
 
         if not validation.is_valid:
-            raise CredentialValidationError(
-                validation.error or "Invalid credentials"
-            )
+            raise CredentialValidationError(validation.error or "Invalid credentials")
 
         if not validation.can_trade:
             raise CredentialValidationError(

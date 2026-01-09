@@ -321,18 +321,38 @@ class TestGridStrategyPnL:
         )
 
         # First cycle: +10 profit
-        buy1 = Order(side="buy", type="limit", price=Decimal("49000"),
-                     quantity=Decimal("0.02"), grid_level=8)
-        sell1 = Order(side="sell", type="limit", price=Decimal("49500"),
-                      quantity=Decimal("0.02"), grid_level=8)
+        buy1 = Order(
+            side="buy",
+            type="limit",
+            price=Decimal("49000"),
+            quantity=Decimal("0.02"),
+            grid_level=8,
+        )
+        sell1 = Order(
+            side="sell",
+            type="limit",
+            price=Decimal("49500"),
+            quantity=Decimal("0.02"),
+            grid_level=8,
+        )
         strategy.on_order_filled(buy1, Decimal("49000"))
         strategy.on_order_filled(sell1, Decimal("49500"))
 
         # Second cycle: +20 profit
-        buy2 = Order(side="buy", type="limit", price=Decimal("48000"),
-                     quantity=Decimal("0.02"), grid_level=6)
-        sell2 = Order(side="sell", type="limit", price=Decimal("49000"),
-                      quantity=Decimal("0.02"), grid_level=6)
+        buy2 = Order(
+            side="buy",
+            type="limit",
+            price=Decimal("48000"),
+            quantity=Decimal("0.02"),
+            grid_level=6,
+        )
+        sell2 = Order(
+            side="sell",
+            type="limit",
+            price=Decimal("49000"),
+            quantity=Decimal("0.02"),
+            grid_level=6,
+        )
         strategy.on_order_filled(buy2, Decimal("48000"))
         strategy.on_order_filled(sell2, Decimal("49000"))
 
@@ -415,10 +435,20 @@ class TestGridStrategyPositionTracking:
         )
 
         # Buy at multiple levels
-        buy1 = Order(side="buy", type="limit", price=Decimal("49000"),
-                     quantity=Decimal("0.02"), grid_level=8)
-        buy2 = Order(side="buy", type="limit", price=Decimal("48000"),
-                     quantity=Decimal("0.03"), grid_level=6)
+        buy1 = Order(
+            side="buy",
+            type="limit",
+            price=Decimal("49000"),
+            quantity=Decimal("0.02"),
+            grid_level=8,
+        )
+        buy2 = Order(
+            side="buy",
+            type="limit",
+            price=Decimal("48000"),
+            quantity=Decimal("0.03"),
+            grid_level=6,
+        )
         strategy.on_order_filled(buy1, Decimal("49000"))
         strategy.on_order_filled(buy2, Decimal("48000"))
 
@@ -436,10 +466,20 @@ class TestGridStrategyPositionTracking:
         )
 
         # Buy at multiple levels
-        buy1 = Order(side="buy", type="limit", price=Decimal("49000"),
-                     quantity=Decimal("0.02"), grid_level=8)
-        buy2 = Order(side="buy", type="limit", price=Decimal("48000"),
-                     quantity=Decimal("0.02"), grid_level=6)
+        buy1 = Order(
+            side="buy",
+            type="limit",
+            price=Decimal("49000"),
+            quantity=Decimal("0.02"),
+            grid_level=8,
+        )
+        buy2 = Order(
+            side="buy",
+            type="limit",
+            price=Decimal("48000"),
+            quantity=Decimal("0.02"),
+            grid_level=6,
+        )
         strategy.on_order_filled(buy1, Decimal("49000"))
         strategy.on_order_filled(buy2, Decimal("48000"))
 

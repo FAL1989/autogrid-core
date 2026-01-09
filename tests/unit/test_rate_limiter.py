@@ -8,7 +8,9 @@ from api.core.rate_limiter import _get_client_ip
 
 
 class _DummyRequest:
-    def __init__(self, headers: dict[str, str] | None = None, client_host: str | None = None) -> None:
+    def __init__(
+        self, headers: dict[str, str] | None = None, client_host: str | None = None
+    ) -> None:
         self.headers = headers or {}
         self.client = SimpleNamespace(host=client_host) if client_host else None
 

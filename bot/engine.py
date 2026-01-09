@@ -9,7 +9,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from decimal import Decimal, ROUND_DOWN
+from decimal import ROUND_DOWN, Decimal
 from typing import Callable, Protocol
 from uuid import UUID
 
@@ -186,7 +186,9 @@ class BotEngine:
             # Legacy order cancellation
             for order in self._orders:
                 if order.status == "open" and order.exchange_id:
-                    await self.exchange.cancel_order(order.exchange_id, self.config.symbol)
+                    await self.exchange.cancel_order(
+                        order.exchange_id, self.config.symbol
+                    )
 
         await self.exchange.disconnect()
 
@@ -283,7 +285,9 @@ class BotEngine:
                             timeout=self.exchange_timeout_seconds,
                         )
                     else:
-                        step_size = await self.exchange.get_step_size(self.config.symbol)
+                        step_size = await self.exchange.get_step_size(
+                            self.config.symbol
+                        )
                 except Exception as e:
                     logger.warning(f"Failed to fetch step size: {e}")
 
@@ -550,9 +554,7 @@ class BotEngine:
         """Normalize quantity to exchange step size and minimums."""
         normalized = quantity
         if step_size and step_size > 0:
-            precision = (normalized / step_size).to_integral_value(
-                rounding=ROUND_DOWN
-            )
+            precision = (normalized / step_size).to_integral_value(rounding=ROUND_DOWN)
             normalized = precision * step_size
         if min_qty and normalized < min_qty:
             return Decimal("0")
@@ -742,11 +744,12 @@ class BotEngine:
 
             # Broadcast P&L update via WebSocket
             from api.core.ws_manager import broadcast_pnl_update
+
             await broadcast_pnl_update(
                 user_id=str(self.config.user_id),
                 bot_id=str(self.config.id),
                 realized_pnl=float(self._state.realized_pnl),
-                unrealized_pnl=0.0
+                unrealized_pnl=0.0,
             )
 
         # Record P&L in circuit breaker (losses trigger safety checks)

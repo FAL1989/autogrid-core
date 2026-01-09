@@ -161,16 +161,24 @@ class CircuitBreaker:
 
         # Check loss limit
         loss_amount = await self._get_hourly_loss(bot_key)
-        loss_percent = (loss_amount / investment * 100) if investment > 0 else Decimal("0")
+        loss_percent = (
+            (loss_amount / investment * 100) if investment > 0 else Decimal("0")
+        )
         if loss_percent >= self.config.max_loss_percent_per_hour:
             await self.trip(bot_id, TripReason.LOSS_LIMIT_EXCEEDED)
-            return False, f"loss_limit_exceeded ({loss_percent:.2f}%/{self.config.max_loss_percent_per_hour}%)"
+            return (
+                False,
+                f"loss_limit_exceeded ({loss_percent:.2f}%/{self.config.max_loss_percent_per_hour}%)",
+            )
 
         # Check price deviation (only for limit orders)
         if order_price is not None:
             deviation = self._calculate_price_deviation(order_price, current_price)
             if deviation > self.config.max_price_deviation_percent:
-                return False, f"price_deviation_exceeded ({deviation:.2f}%/{self.config.max_price_deviation_percent}%)"
+                return (
+                    False,
+                    f"price_deviation_exceeded ({deviation:.2f}%/{self.config.max_price_deviation_percent}%)",
+                )
 
         # All checks passed
         return True, None
@@ -198,7 +206,10 @@ class CircuitBreaker:
             pipe.expire(half_open_key, self.config.order_rate_window_seconds)
             results = await pipe.execute()
             count = int(results[0]) if results and results[0] else 0
-            if self.config.half_open_orders > 0 and count >= self.config.half_open_orders:
+            if (
+                self.config.half_open_orders > 0
+                and count >= self.config.half_open_orders
+            ):
                 await self.reset(bot_id)
 
     async def record_pnl(self, bot_id: UUID, pnl: Decimal) -> None:
@@ -247,9 +258,7 @@ class CircuitBreaker:
         pipe.delete(f"{HALF_OPEN_COUNT_KEY}:{bot_key}")
         await pipe.execute()
 
-        logger.warning(
-            f"Circuit breaker TRIPPED for bot {bot_id}: {reason.value}"
-        )
+        logger.warning(f"Circuit breaker TRIPPED for bot {bot_id}: {reason.value}")
 
     async def reset(self, bot_id: UUID) -> None:
         """

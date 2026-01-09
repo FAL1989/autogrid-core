@@ -20,6 +20,7 @@ class TestReconcileRunningBotsTrades:
     def reset_global_state(self):
         """Reset global state before each test."""
         import bot.tasks as tasks_module
+
         tasks_module._running_bots = {}
         yield
         tasks_module._running_bots = {}
@@ -41,8 +42,16 @@ class TestReconcileRunningBotsTrades:
             reconcile_calls.append(bot_id)
             return {"status": "ok", "created": 1, "skipped": 0}
 
-        with patch.object(tasks_module, "_reconcile_bot_trades_async", side_effect=mock_reconcile):
-            with patch.object(tasks_module, "_run_async", side_effect=lambda coro: tasks_module.asyncio.get_event_loop().run_until_complete(coro)):
+        with patch.object(
+            tasks_module, "_reconcile_bot_trades_async", side_effect=mock_reconcile
+        ):
+            with patch.object(
+                tasks_module,
+                "_run_async",
+                side_effect=lambda coro: tasks_module.asyncio.get_event_loop().run_until_complete(
+                    coro
+                ),
+            ):
                 result = tasks_module.reconcile_running_bots_trades()
 
         assert len(reconcile_calls) == 2
@@ -63,9 +72,19 @@ class TestReconcileRunningBotsTrades:
         async def mock_reconcile(bot_id, since_minutes=1440, limit=100):
             return {"status": "ok", "created": 1, "skipped": 0}
 
-        with patch.object(tasks_module, "_list_recent_bot_ids_async", side_effect=mock_list_recent):
-            with patch.object(tasks_module, "_reconcile_bot_trades_async", side_effect=mock_reconcile):
-                with patch.object(tasks_module, "_run_async", side_effect=lambda coro: tasks_module.asyncio.get_event_loop().run_until_complete(coro)):
+        with patch.object(
+            tasks_module, "_list_recent_bot_ids_async", side_effect=mock_list_recent
+        ):
+            with patch.object(
+                tasks_module, "_reconcile_bot_trades_async", side_effect=mock_reconcile
+            ):
+                with patch.object(
+                    tasks_module,
+                    "_run_async",
+                    side_effect=lambda coro: tasks_module.asyncio.get_event_loop().run_until_complete(
+                        coro
+                    ),
+                ):
                     result = tasks_module.reconcile_running_bots_trades()
 
         assert result["created"] == 1
@@ -90,8 +109,16 @@ class TestReconcileRunningBotsTrades:
                 raise Exception("Exchange error")
             return {"status": "ok", "created": 1, "skipped": 0}
 
-        with patch.object(tasks_module, "_reconcile_bot_trades_async", side_effect=mock_reconcile):
-            with patch.object(tasks_module, "_run_async", side_effect=lambda coro: tasks_module.asyncio.get_event_loop().run_until_complete(coro)):
+        with patch.object(
+            tasks_module, "_reconcile_bot_trades_async", side_effect=mock_reconcile
+        ):
+            with patch.object(
+                tasks_module,
+                "_run_async",
+                side_effect=lambda coro: tasks_module.asyncio.get_event_loop().run_until_complete(
+                    coro
+                ),
+            ):
                 result = tasks_module.reconcile_running_bots_trades()
 
         # One error, one success
@@ -120,8 +147,16 @@ class TestReconcileRunningBotsTrades:
             result_idx[0] += 1
             return r
 
-        with patch.object(tasks_module, "_reconcile_bot_trades_async", side_effect=mock_reconcile):
-            with patch.object(tasks_module, "_run_async", side_effect=lambda coro: tasks_module.asyncio.get_event_loop().run_until_complete(coro)):
+        with patch.object(
+            tasks_module, "_reconcile_bot_trades_async", side_effect=mock_reconcile
+        ):
+            with patch.object(
+                tasks_module,
+                "_run_async",
+                side_effect=lambda coro: tasks_module.asyncio.get_event_loop().run_until_complete(
+                    coro
+                ),
+            ):
                 result = tasks_module.reconcile_running_bots_trades()
 
         assert result["created"] == 4  # 3 + 1
@@ -200,12 +235,12 @@ class TestReconcileBotTradesAsync:
 
         # Configure execute to return different mocks for different queries
         execute_returns = [
-            mock_bot_result,     # Bot query
+            mock_bot_result,  # Bot query
             mock_orders_result,  # Orders query
-            mock_no_trade,       # Trade by exchange_trade_id
-            mock_no_trade,       # Trade by order_id/price/qty
+            mock_no_trade,  # Trade by exchange_trade_id
+            mock_no_trade,  # Trade by order_id/price/qty
             MagicMock(all=MagicMock(return_value=[])),  # totals query
-            mock_sum_result,     # realized_pnl sum
+            mock_sum_result,  # realized_pnl sum
         ]
         execute_idx = [0]
 
@@ -239,9 +274,16 @@ class TestReconcileBotTradesAsync:
                 mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
                 mock_sessionmaker.return_value = lambda: mock_session_ctx
 
-                with patch("bot.exchange.connector.CCXTConnector", return_value=mock_connector):
-                    with patch("api.services.credential_service.CredentialService", return_value=mock_cred_service):
-                        result = await tasks_module._reconcile_bot_trades_async(str(bot_id))
+                with patch(
+                    "bot.exchange.connector.CCXTConnector", return_value=mock_connector
+                ):
+                    with patch(
+                        "api.services.credential_service.CredentialService",
+                        return_value=mock_cred_service,
+                    ):
+                        result = await tasks_module._reconcile_bot_trades_async(
+                            str(bot_id)
+                        )
 
         # Should have created 1 trade
         assert result["created"] == 1
@@ -343,9 +385,16 @@ class TestReconcileBotTradesAsync:
                 mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
                 mock_sessionmaker.return_value = lambda: mock_session_ctx
 
-                with patch("bot.exchange.connector.CCXTConnector", return_value=mock_connector):
-                    with patch("api.services.credential_service.CredentialService", return_value=mock_cred_service):
-                        result = await tasks_module._reconcile_bot_trades_async(str(bot_id))
+                with patch(
+                    "bot.exchange.connector.CCXTConnector", return_value=mock_connector
+                ):
+                    with patch(
+                        "api.services.credential_service.CredentialService",
+                        return_value=mock_cred_service,
+                    ):
+                        result = await tasks_module._reconcile_bot_trades_async(
+                            str(bot_id)
+                        )
 
         # Trade should be skipped
         assert result["skipped"] == 1
@@ -431,9 +480,16 @@ class TestReconcileBotTradesAsync:
                 mock_session_ctx.__aexit__ = AsyncMock(return_value=None)
                 mock_sessionmaker.return_value = lambda: mock_session_ctx
 
-                with patch("bot.exchange.connector.CCXTConnector", return_value=mock_connector):
-                    with patch("api.services.credential_service.CredentialService", return_value=mock_cred_service):
-                        result = await tasks_module._reconcile_bot_trades_async(str(bot_id))
+                with patch(
+                    "bot.exchange.connector.CCXTConnector", return_value=mock_connector
+                ):
+                    with patch(
+                        "api.services.credential_service.CredentialService",
+                        return_value=mock_cred_service,
+                    ):
+                        result = await tasks_module._reconcile_bot_trades_async(
+                            str(bot_id)
+                        )
 
         # Trade should be skipped (no matching order)
         assert result["skipped"] == 1

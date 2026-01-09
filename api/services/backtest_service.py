@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.orm import Backtest
@@ -98,8 +98,10 @@ class BacktestService:
             .limit(limit)
             .offset(offset)
         )
-        count_stmt = select(func.count()).select_from(Backtest).where(
-            Backtest.user_id == user_id
+        count_stmt = (
+            select(func.count())
+            .select_from(Backtest)
+            .where(Backtest.user_id == user_id)
         )
         result = await self.db.execute(stmt)
         count_result = await self.db.execute(count_stmt)
@@ -169,7 +171,9 @@ class BacktestService:
 
         return candles
 
-    def _simulate_grid(self, candles: list[Candle], config: dict[str, Any]) -> dict[str, Any]:
+    def _simulate_grid(
+        self, candles: list[Candle], config: dict[str, Any]
+    ) -> dict[str, Any]:
         lower = float(config["lower_price"])
         upper = float(config["upper_price"])
         grid_count = int(config["grid_count"])
@@ -193,7 +197,11 @@ class BacktestService:
             price = candle.close
 
             for level in buy_levels:
-                if price <= level and level not in open_positions and cash >= per_level_investment:
+                if (
+                    price <= level
+                    and level not in open_positions
+                    and cash >= per_level_investment
+                ):
                     quantity = per_level_investment / level
                     cash -= per_level_investment
                     open_positions[level] = (level, quantity)
@@ -227,12 +235,16 @@ class BacktestService:
             for entry_price in to_close:
                 open_positions.pop(entry_price, None)
 
-            inventory_value = sum(quantity * price for _, (_, quantity) in open_positions.items())
+            inventory_value = sum(
+                quantity * price for _, (_, quantity) in open_positions.items()
+            )
             equity_points.append((candle.timestamp, cash + inventory_value))
 
         return self._build_results(trades, equity_points, investment)
 
-    def _simulate_dca(self, candles: list[Candle], config: dict[str, Any]) -> dict[str, Any]:
+    def _simulate_dca(
+        self, candles: list[Candle], config: dict[str, Any]
+    ) -> dict[str, Any]:
         amount = float(config.get("amount", 0))
         interval = str(config.get("interval", "daily"))
         trigger_drop = config.get("trigger_drop")
@@ -313,7 +325,10 @@ class BacktestService:
         return self._build_results(trades, equity_points, initial_capital)
 
     def _build_results(
-        self, trades: list[SimTrade], equity_points: list[tuple[datetime, float]], initial_capital: float
+        self,
+        trades: list[SimTrade],
+        equity_points: list[tuple[datetime, float]],
+        initial_capital: float,
     ) -> dict[str, Any]:
         equity_curve = self._downsample_equity(equity_points)
         equity_values = [point["value"] for point in equity_curve]
@@ -330,8 +345,12 @@ class BacktestService:
         total_trades = len(trades)
         win_rate = wins / total_trades if total_trades else 0.0
 
-        gross_profit = sum(trade.realized_pnl for trade in trades if trade.realized_pnl > 0)
-        gross_loss = abs(sum(trade.realized_pnl for trade in trades if trade.realized_pnl < 0))
+        gross_profit = sum(
+            trade.realized_pnl for trade in trades if trade.realized_pnl > 0
+        )
+        gross_loss = abs(
+            sum(trade.realized_pnl for trade in trades if trade.realized_pnl < 0)
+        )
         profit_factor = gross_profit / gross_loss if gross_loss > 0 else 0.0
 
         return {
@@ -357,8 +376,10 @@ class BacktestService:
         if not returns:
             return 0.0
         mean_return = sum(returns) / len(returns)
-        variance = sum((r - mean_return) ** 2 for r in returns) / max(len(returns) - 1, 1)
-        std_dev = variance ** 0.5
+        variance = sum((r - mean_return) ** 2 for r in returns) / max(
+            len(returns) - 1, 1
+        )
+        std_dev = variance**0.5
         if std_dev == 0:
             return 0.0
         return mean_return / std_dev * (len(returns) ** 0.5)

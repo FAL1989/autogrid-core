@@ -15,7 +15,9 @@ except Exception:
     telegram_routes = None
 
 if telegram_routes:
-    app.include_router(telegram_routes.router, prefix="/api/v1/telegram", tags=["Telegram"])
+    app.include_router(
+        telegram_routes.router, prefix="/api/v1/telegram", tags=["Telegram"]
+    )
 
 try:
     from cloud_api.services.telegram_service import set_webhook

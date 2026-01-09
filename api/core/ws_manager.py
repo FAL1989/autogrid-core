@@ -5,8 +5,8 @@ Manages WebSocket connections and broadcasts messages to users.
 """
 
 import logging
-from typing import Any
 from collections import defaultdict
+from typing import Any
 
 from fastapi import WebSocket
 
@@ -28,19 +28,25 @@ class ConnectionManager:
         """Accept a new WebSocket connection for a user."""
         await websocket.accept()
         self.active_connections[user_id].add(websocket)
-        logger.info(f"WebSocket connected for user {user_id}. Total connections: {len(self.active_connections[user_id])}")
+        logger.info(
+            f"WebSocket connected for user {user_id}. Total connections: {len(self.active_connections[user_id])}"
+        )
 
     def disconnect(self, websocket: WebSocket, user_id: str) -> None:
         """Remove a WebSocket connection for a user."""
         if websocket in self.active_connections[user_id]:
             self.active_connections[user_id].discard(websocket)
-            logger.info(f"WebSocket disconnected for user {user_id}. Remaining connections: {len(self.active_connections[user_id])}")
+            logger.info(
+                f"WebSocket disconnected for user {user_id}. Remaining connections: {len(self.active_connections[user_id])}"
+            )
 
             # Clean up empty user entries
             if not self.active_connections[user_id]:
                 del self.active_connections[user_id]
 
-    async def send_personal_message(self, message: dict[str, Any], user_id: str) -> None:
+    async def send_personal_message(
+        self, message: dict[str, Any], user_id: str
+    ) -> None:
         """Send a message to a specific user (all their connections)."""
         if user_id in self.active_connections:
             disconnected = []
@@ -55,7 +61,9 @@ class ConnectionManager:
             for conn in disconnected:
                 self.disconnect(conn, user_id)
 
-    async def broadcast_to_user(self, user_id: str, event_type: str, payload: dict[str, Any]) -> None:
+    async def broadcast_to_user(
+        self, user_id: str, event_type: str, payload: dict[str, Any]
+    ) -> None:
         """
         Broadcast an event to all connections of a specific user.
 
@@ -92,12 +100,16 @@ class ConnectionManager:
 
     def is_user_connected(self, user_id: str) -> bool:
         """Check if a user has any active connections."""
-        return user_id in self.active_connections and len(self.active_connections[user_id]) > 0
+        return (
+            user_id in self.active_connections
+            and len(self.active_connections[user_id]) > 0
+        )
 
     @staticmethod
     def _get_timestamp() -> str:
         """Get current ISO timestamp."""
         from datetime import datetime, timezone
+
         return datetime.now(timezone.utc).isoformat()
 
 
@@ -106,7 +118,9 @@ ws_manager = ConnectionManager()
 
 
 # Helper functions for broadcasting events
-async def broadcast_bot_status(user_id: str, bot_id: str, status: str, message: str | None = None) -> None:
+async def broadcast_bot_status(
+    user_id: str, bot_id: str, status: str, message: str | None = None
+) -> None:
     """Broadcast bot status change to user."""
     await ws_manager.broadcast_to_user(
         user_id,
@@ -119,7 +133,9 @@ async def broadcast_bot_status(user_id: str, bot_id: str, status: str, message: 
     )
 
 
-async def broadcast_order_update(user_id: str, bot_id: str, order: dict[str, Any]) -> None:
+async def broadcast_order_update(
+    user_id: str, bot_id: str, order: dict[str, Any]
+) -> None:
     """Broadcast order update to user."""
     await ws_manager.broadcast_to_user(
         user_id,
@@ -143,7 +159,9 @@ async def broadcast_trade(user_id: str, bot_id: str, trade: dict[str, Any]) -> N
     )
 
 
-async def broadcast_pnl_update(user_id: str, bot_id: str, realized_pnl: float, unrealized_pnl: float) -> None:
+async def broadcast_pnl_update(
+    user_id: str, bot_id: str, realized_pnl: float, unrealized_pnl: float
+) -> None:
     """Broadcast P&L update to user."""
     await ws_manager.broadcast_to_user(
         user_id,

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Protocol
-from uuid import UUID
-from decimal import Decimal
 import importlib
 import os
+from decimal import Decimal
+from typing import Protocol
+from uuid import UUID
 
 
 class Notifier(Protocol):
@@ -19,11 +19,9 @@ class Notifier(Protocol):
         side: str,
         quantity: Decimal,
         price: Decimal,
-    ) -> None:
-        ...
+    ) -> None: ...
 
-    async def notify_error(self, user_id: UUID, error: str) -> None:
-        ...
+    async def notify_error(self, user_id: UUID, error: str) -> None: ...
 
 
 class NullNotifier:

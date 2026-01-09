@@ -348,7 +348,9 @@ class OrderManager:
                     timeout=self.exchange_timeout_seconds,
                 )
             else:
-                result = await self.exchange.fetch_order(order.exchange_id, order.symbol)
+                result = await self.exchange.fetch_order(
+                    order.exchange_id, order.symbol
+                )
             await self._process_exchange_update(order, result)
             return order
 
@@ -629,11 +631,7 @@ class OrderManager:
             fee_value = data.get("fees")
 
         if isinstance(fee_value, dict):
-            fee_asset = (
-                fee_value.get("currency")
-                or fee_value.get("asset")
-                or fee_asset
-            )
+            fee_asset = fee_value.get("currency") or fee_value.get("asset") or fee_asset
             fee_value = fee_value.get(
                 "cost", fee_value.get("commission", fee_value.get("fee", 0))
             )
@@ -642,9 +640,7 @@ class OrderManager:
             list_asset = None
             for item in fee_value:
                 if isinstance(item, dict):
-                    cost = item.get(
-                        "cost", item.get("commission", item.get("fee", 0))
-                    )
+                    cost = item.get("cost", item.get("commission", item.get("fee", 0)))
                     try:
                         total += Decimal(str(cost))
                     except Exception:
@@ -717,6 +713,7 @@ class OrderManager:
 
                 # Broadcast order update via WebSocket
                 from api.core.ws_manager import broadcast_order_update
+
                 user_id = await self._cache_bot_user(order.bot_id)
                 await broadcast_order_update(
                     user_id=str(user_id),
@@ -725,8 +722,8 @@ class OrderManager:
                         "id": str(order.id),
                         "status": order.state.value,
                         "filled_quantity": float(order.filled_quantity),
-                        "average_fill_price": float(order.average_fill_price or 0)
-                    }
+                        "average_fill_price": float(order.average_fill_price or 0),
+                    },
                 )
                 try:
                     asyncio.create_task(
@@ -749,6 +746,7 @@ class OrderManager:
 
                 try:
                     from bot.tasks import process_order_fill
+
                     fill_payload = {
                         "filledQuantity": str(
                             data.get("filledQuantity", order.filled_quantity)
@@ -832,6 +830,7 @@ class OrderManager:
         """
         if bot_id not in self._bot_user_cache:
             from api.models.orm import Bot
+
             stmt = select(Bot.user_id).where(Bot.id == bot_id)
             result = await self.db_session.execute(stmt)
             user_id = result.scalar_one()
