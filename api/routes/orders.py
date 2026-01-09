@@ -5,7 +5,7 @@ Endpoints for viewing and managing bot orders and trades.
 """
 
 from datetime import datetime
-from typing import Literal
+from typing import Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -140,8 +140,8 @@ async def list_orders(
             bot_id=order.bot_id,
             exchange_order_id=order.exchange_order_id,
             symbol=order.symbol,
-            side=order.side,
-            type=order.type,
+            side=cast(Literal["buy", "sell"], order.side),
+            type=cast(Literal["limit", "market"], order.type),
             price=float(order.price) if order.price else None,
             quantity=float(order.quantity),
             filled_quantity=float(order.filled_quantity),
@@ -192,8 +192,8 @@ async def get_open_orders(
             bot_id=order.bot_id,
             exchange_order_id=order.exchange_order_id,
             symbol=order.symbol,
-            side=order.side,
-            type=order.type,
+            side=cast(Literal["buy", "sell"], order.side),
+            type=cast(Literal["limit", "market"], order.type),
             price=float(order.price) if order.price else None,
             quantity=float(order.quantity),
             filled_quantity=float(order.filled_quantity),
@@ -291,7 +291,7 @@ async def list_trades(
             bot_id=trade.bot_id,
             order_id=trade.order_id,
             symbol=trade.symbol,
-            side=trade.side,
+            side=cast(Literal["buy", "sell"], trade.side),
             price=float(trade.price),
             quantity=float(trade.quantity),
             fee=float(trade.fee),

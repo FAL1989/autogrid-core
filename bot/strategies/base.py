@@ -12,6 +12,21 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 
+OrderSide = Literal["buy", "sell"]
+OrderType = Literal["limit", "market"]
+OrderStatus = Literal[
+    "pending",
+    "submitting",
+    "open",
+    "partially_filled",
+    "filled",
+    "cancelling",
+    "cancelled",
+    "rejected",
+    "error",
+]
+
+
 @dataclass
 class Order:
     """
@@ -28,12 +43,12 @@ class Order:
         grid_level: Index of grid level (for grid strategies)
     """
 
-    side: Literal["buy", "sell"]
-    type: Literal["limit", "market"]
+    side: OrderSide
+    type: OrderType
     quantity: Decimal
     price: Decimal | None = None
     id: UUID = field(default_factory=uuid4)
-    status: Literal["pending", "open", "filled", "cancelled", "error"] = "pending"
+    status: OrderStatus = "pending"
     exchange_id: str | None = None
     grid_level: int | None = None  # Grid level index for position tracking
 
@@ -92,7 +107,7 @@ class BaseStrategy(ABC):
         pass
 
     @abstractmethod
-    def on_order_filled(self, order: Order, fill_price: Decimal) -> None:
+    def on_order_filled(self, order: Order, fill_price: Decimal) -> Decimal:
         """
         Handle a filled order.
 
@@ -101,6 +116,9 @@ class BaseStrategy(ABC):
         Args:
             order: The filled order
             fill_price: Actual fill price
+
+        Returns:
+            Realized P&L from this fill.
         """
         pass
 

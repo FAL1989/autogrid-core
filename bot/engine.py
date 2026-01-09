@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import ROUND_DOWN, Decimal
-from typing import Callable, Protocol
+from typing import Callable, Protocol, cast
 from uuid import UUID
 
 from api.core.config import get_settings
@@ -18,7 +18,7 @@ from bot.circuit_breaker import CircuitBreaker
 from bot.exchange.connector import ExchangeConnector
 from bot.notifications import Notifier, NullNotifier
 from bot.order_manager import ManagedOrder, OrderManager
-from bot.strategies.base import BaseStrategy, Order
+from bot.strategies.base import BaseStrategy, Order, OrderStatus
 
 logger = logging.getLogger(__name__)
 
@@ -315,19 +315,23 @@ class BotEngine:
         if self.order_manager:
             # Convert ManagedOrders to strategy Orders
             managed_orders = await self.order_manager.get_open_orders(self.config.id)
-            return [
-                Order(
-                    id=mo.id,
-                    side=mo.side,
-                    type=mo.order_type,
-                    price=mo.price,
-                    quantity=mo.quantity,
-                    status="open" if mo.is_active else mo.state.value,
-                    exchange_id=mo.exchange_id,
-                    grid_level=mo.grid_level,
+            orders: list[Order] = []
+            for mo in managed_orders:
+                status_value = "open" if mo.is_active else mo.state.value
+                status = cast(OrderStatus, status_value)
+                orders.append(
+                    Order(
+                        id=mo.id,
+                        side=mo.side,
+                        type=mo.order_type,
+                        price=mo.price,
+                        quantity=mo.quantity,
+                        status=status,
+                        exchange_id=mo.exchange_id,
+                        grid_level=mo.grid_level,
+                    )
                 )
-                for mo in managed_orders
-            ]
+            return orders
         return [o for o in self._orders if o.status == "open"]
 
     async def _maybe_update_dynamic_grid(
@@ -722,7 +726,7 @@ class BotEngine:
 
         # Notify strategy and get realized P&L
         realized_pnl = Decimal("0")
-        if order.average_fill_price:
+        if order.average_fill_price is not None:
             # Convert ManagedOrder to strategy Order
             strategy_order = Order(
                 id=order.id,

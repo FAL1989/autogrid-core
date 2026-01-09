@@ -5,9 +5,11 @@ Business logic for bot operations including CRUD and state management.
 """
 
 from decimal import Decimal
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import func, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.orm import Bot, ExchangeCredential
@@ -187,7 +189,8 @@ class BotService:
         )
         result = await self.db.execute(stmt)
         await self.db.flush()
-        return result.rowcount > 0
+        cursor_result = cast(CursorResult, result)
+        return (cursor_result.rowcount or 0) > 0
 
     async def get_credential_for_user(
         self,
@@ -290,7 +293,8 @@ class BotService:
         stmt = update(Bot).where(Bot.id == bot_id).values(strategy_state=state)
         result = await self.db.execute(stmt)
         await self.db.flush()
-        return result.rowcount > 0
+        cursor_result = cast(CursorResult, result)
+        return (cursor_result.rowcount or 0) > 0
 
     async def get_strategy_state(self, bot_id: UUID) -> dict | None:
         """

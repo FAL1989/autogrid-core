@@ -187,8 +187,11 @@ async def _start_bot_async(
     """Async implementation of bot startup."""
     import redis.asyncio as redis_async
     from sqlalchemy import select
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
 
     from api.core.config import get_settings
     from api.models.orm import Bot, ExchangeCredential
@@ -197,6 +200,7 @@ async def _start_bot_async(
     from bot.engine import BotConfig, BotEngine
     from bot.exchange.connector import CCXTConnector
     from bot.order_manager import OrderManager
+    from bot.strategies.base import BaseStrategy
     from bot.strategies.dca import DCAStrategy
     from bot.strategies.grid import GridStrategy
 
@@ -204,13 +208,17 @@ async def _start_bot_async(
 
     # Create database session
     db_engine = create_async_engine(settings.async_database_url)
-    async_session = sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    async_session = async_sessionmaker(
+        bind=db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
     db = async_session()
 
     try:
         # Load bot from database
-        stmt = select(Bot).where(Bot.id == UUID(bot_id))
-        result = await db.execute(stmt)
+        bot_stmt = select(Bot).where(Bot.id == UUID(bot_id))
+        result = await db.execute(bot_stmt)
         bot = result.scalar_one_or_none()
 
         if not bot:
@@ -221,11 +229,11 @@ async def _start_bot_async(
 
         # Load credentials
         if bot.credential_id:
-            stmt = select(ExchangeCredential).where(
+            credential_stmt = select(ExchangeCredential).where(
                 ExchangeCredential.id == bot.credential_id
             )
-            result = await db.execute(stmt)
-            credential = result.scalar_one_or_none()
+            credential_result = await db.execute(credential_stmt)
+            credential = credential_result.scalar_one_or_none()
 
             if not credential:
                 return {"status": "error", "message": "Credentials not found"}
@@ -240,7 +248,7 @@ async def _start_bot_async(
         config = dict(bot.config or {})
 
         # Strategy initialization
-        strategy_instance = None
+        strategy_instance: BaseStrategy | None = None
         investment_value = Decimal(str(config.get("investment", 0) or 0))
         normalized_config = dict(config)
 
@@ -377,8 +385,18 @@ async def _start_bot_async(
         # Load existing orders
         await order_manager.load_orders_from_db(UUID(bot_id))
 
-        if bot.strategy == "grid" and rehydrate and strategy_instance:
+        if (
+            bot.strategy == "grid"
+            and rehydrate
+            and isinstance(strategy_instance, GridStrategy)
+        ):
             await _restore_grid_strategy_state(bot_id, strategy_instance, db)
+
+        if strategy_instance is None:
+            return {
+                "status": "error",
+                "message": f"Strategy {bot.strategy} not initialized",
+            }
 
         engine = BotEngine(
             config=BotConfig(
@@ -480,8 +498,11 @@ async def _stop_bot_async(
 ) -> dict:
     """Async implementation of bot shutdown."""
     from sqlalchemy import select
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
 
     from api.core.config import get_settings
     from api.models.orm import Bot
@@ -522,7 +543,11 @@ async def _stop_bot_async(
 
     # Update database status
     engine = create_async_engine(settings.async_database_url)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async_session = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
 
     async with async_session() as db:
         stmt = select(Bot).where(Bot.id == UUID(bot_id))
@@ -613,15 +638,22 @@ def tick_running_bots(self) -> dict:
 async def _rehydrate_running_bots() -> dict:
     """Rebuild in-memory running bots state from the database."""
     from sqlalchemy import select
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
 
     from api.core.config import get_settings
     from api.models.orm import Bot
 
     settings = get_settings()
     db_engine = create_async_engine(settings.async_database_url)
-    async_session = sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    async_session = async_sessionmaker(
+        bind=db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
     db = async_session()
 
     try:
@@ -635,8 +667,10 @@ async def _rehydrate_running_bots() -> dict:
     for bot_id in bot_ids:
         if bot_id in _running_bots:
             continue
-        result = await _start_bot_async(bot_id, rehydrate=True, broadcast=False)
-        if result.get("status") in ("running", "already_running"):
+        start_result = await _start_bot_async(
+            bot_id, rehydrate=True, broadcast=False
+        )
+        if start_result.get("status") in ("running", "already_running"):
             rehydrated += 1
 
     if rehydrated:
@@ -772,8 +806,11 @@ async def _refresh_running_bot_config(bot_id: str, bot_data: dict[str, Any]) -> 
         return
 
     from sqlalchemy import select
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
 
     from api.core.config import get_settings
     from api.models.orm import Bot
@@ -781,7 +818,11 @@ async def _refresh_running_bot_config(bot_id: str, bot_data: dict[str, Any]) -> 
 
     settings = get_settings()
     db_engine = create_async_engine(settings.async_database_url)
-    async_session = sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    async_session = async_sessionmaker(
+        bind=db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
 
     try:
         async with async_session() as db:
@@ -950,8 +991,11 @@ async def _process_order_fill_async(
 ) -> dict:
     """Async implementation of order fill processing."""
     from sqlalchemy import func, select, update
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
 
     from api.core.config import get_settings
     from api.models.orm import Bot
@@ -960,7 +1004,11 @@ async def _process_order_fill_async(
 
     settings = get_settings()
     engine = create_async_engine(settings.async_database_url)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async_session = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
 
     async with async_session() as db:
         # Load order
@@ -1009,7 +1057,7 @@ async def _process_order_fill_async(
         if timestamp_value:
             ts = int(timestamp_value)
             if ts > 1_000_000_000_000:
-                ts = ts / 1000
+                ts = int(ts / 1000)
             trade_timestamp = datetime.fromtimestamp(ts, tz=timezone.utc)
 
         existing_trade = None
@@ -1271,15 +1319,22 @@ def reconcile_running_bots_trades(self) -> dict:
 async def _list_recent_bot_ids_async(hours: int = 24) -> list[str]:
     """List bot IDs updated within the last N hours."""
     from sqlalchemy import select
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
 
     from api.core.config import get_settings
     from api.models.orm import Bot
 
     settings = get_settings()
     engine = create_async_engine(settings.async_database_url)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async_session = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
 
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
     async with async_session() as db:
@@ -1297,8 +1352,11 @@ async def _reconcile_bot_trades_async(
 ) -> dict:
     """Fetch recent trades from exchange and persist missing ones."""
     from sqlalchemy import func, select
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
 
     from api.core.config import get_settings
     from api.models.orm import Bot, ExchangeCredential
@@ -1309,7 +1367,11 @@ async def _reconcile_bot_trades_async(
 
     settings = get_settings()
     engine = create_async_engine(settings.async_database_url)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async_session = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
 
     created = 0
     skipped = 0
@@ -1433,7 +1495,7 @@ async def _reconcile_bot_trades_async(
                 if timestamp_value:
                     ts = int(timestamp_value)
                     if ts > 1_000_000_000_000:
-                        ts = ts / 1000
+                        ts = int(ts / 1000)
                     trade_timestamp = datetime.fromtimestamp(ts, tz=timezone.utc)
 
                 trade = Trade(
@@ -1634,8 +1696,11 @@ def sync_bot_metrics(self, bot_id: str) -> dict:
 async def _sync_bot_metrics_async(bot_id: str) -> dict:
     """Async implementation of bot metrics sync."""
     from sqlalchemy import func, select, update
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
 
     from api.core.config import get_settings
     from api.models.orm import Bot
@@ -1681,7 +1746,11 @@ async def _sync_bot_metrics_async(bot_id: str) -> dict:
     # Update in database
     settings = get_settings()
     engine = create_async_engine(settings.async_database_url)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async_session = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
 
     async with async_session() as db:
         from api.models.orm import Trade
@@ -2100,8 +2169,11 @@ def dca_save_strategy_state(self) -> dict:
 
 async def _dca_save_strategy_state_async() -> dict:
     """Persist DCA strategy state for all running bots."""
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
 
     from api.core.config import get_settings
     from api.services.bot_service import BotService
@@ -2112,7 +2184,11 @@ async def _dca_save_strategy_state_async() -> dict:
 
     settings = get_settings()
     engine = create_async_engine(settings.async_database_url)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async_session = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
 
     async with async_session() as db:
         bot_service = BotService(db)
@@ -2200,15 +2276,22 @@ async def _update_bot_status(
 ) -> None:
     """Update bot status in database."""
     from sqlalchemy import select
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
 
     from api.core.config import get_settings
     from api.models.orm import Bot
 
     settings = get_settings()
     engine = create_async_engine(settings.async_database_url)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async_session = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
 
     async with async_session() as db:
         stmt = select(Bot).where(Bot.id == UUID(bot_id))

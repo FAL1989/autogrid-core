@@ -105,7 +105,7 @@ class BacktestService:
         )
         result = await self.db.execute(stmt)
         count_result = await self.db.execute(count_stmt)
-        return result.scalars().all(), count_result.scalar_one()
+        return list(result.scalars().all()), count_result.scalar_one()
 
     async def get_for_user(self, backtest_id: UUID, user_id: UUID) -> Backtest | None:
         stmt = select(Backtest).where(

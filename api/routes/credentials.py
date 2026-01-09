@@ -20,6 +20,15 @@ from api.services.credential_service import CredentialService, CredentialValidat
 router = APIRouter()
 
 
+def _coerce_float(value: object | None) -> float | None:
+    """Convert a value to float when possible."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float, str)):
+        return float(value)
+    return None
+
+
 # =============================================================================
 # Schemas
 # =============================================================================
@@ -364,8 +373,8 @@ async def get_ticker(
         exchange=credential.exchange,
         symbol=symbol,
         last=float(ticker.get("last") or 0),
-        bid=float(ticker.get("bid")) if ticker.get("bid") is not None else None,
-        ask=float(ticker.get("ask")) if ticker.get("ask") is not None else None,
+        bid=_coerce_float(ticker.get("bid")),
+        ask=_coerce_float(ticker.get("ask")),
         timestamp=ticker.get("timestamp"),
     )
 

@@ -415,7 +415,10 @@ class GridStrategy(BaseStrategy):
 
     def get_total_position(self) -> Decimal:
         """Get total position across all grid levels."""
-        return sum(level.position_qty for level in self._levels.values())
+        return sum(
+            (level.position_qty for level in self._levels.values()),
+            Decimal("0"),
+        )
 
     def get_average_entry_price(self) -> Decimal:
         """Get weighted average entry price for current position."""

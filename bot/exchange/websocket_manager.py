@@ -274,7 +274,11 @@ class BinanceWebSocket(WebSocketHandler):
         headers = {"X-MBX-APIKEY": self.config.api_key}
 
         try:
-            async with self._session.post(url, headers=headers) as resp:
+            session = self._session
+            if session is None:
+                logger.error("WebSocket session not initialized")
+                return None
+            async with session.post(url, headers=headers) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     return data.get("listenKey")
@@ -296,12 +300,17 @@ class BinanceWebSocket(WebSocketHandler):
         if not self._listen_key:
             return
 
+        session = self._session
+        if session is None:
+            logger.error("WebSocket session not initialized")
+            return
+
         url = f"{self.rest_url}/api/v3/userDataStream"
         headers = {"X-MBX-APIKEY": self.config.api_key}
         params = {"listenKey": self._listen_key}
 
         try:
-            async with self._session.put(url, headers=headers, params=params) as resp:
+            async with session.put(url, headers=headers, params=params) as resp:
                 if resp.status != 200:
                     logger.warning(f"Listen key ping failed: {await resp.text()}")
         except Exception as e:
@@ -355,6 +364,8 @@ class BybitWebSocket(WebSocketHandler):
 
     async def subscribe_user_data(self) -> None:
         """Subscribe to order and execution topics."""
+        if not self._ws:
+            raise RuntimeError("WebSocket not connected")
         subscribe_msg = {
             "op": "subscribe",
             "args": ["order", "execution"],
@@ -406,6 +417,8 @@ class BybitWebSocket(WebSocketHandler):
 
     async def _authenticate(self) -> None:
         """Authenticate with Bybit using HMAC signature."""
+        if not self._ws:
+            raise RuntimeError("WebSocket not connected")
         expires = int(time.time() * 1000) + 10000  # 10 seconds from now
         signature = self._generate_signature(expires)
 
@@ -470,6 +483,7 @@ class WebSocketManager:
             rest_timeout_seconds=settings.exchange_rest_timeout_seconds,
         )
 
+        handler: WebSocketHandler
         if exchange_id == "binance":
             handler = BinanceWebSocket(config)
         elif exchange_id == "bybit":

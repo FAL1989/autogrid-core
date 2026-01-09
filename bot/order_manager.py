@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable, cast
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.models.orm import Order as OrderORM
 from bot.exchange.connector import ExchangeConnector
 from bot.notifications import Notifier, NullNotifier
+from bot.strategies.base import OrderSide, OrderType
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +113,8 @@ class ManagedOrder:
 
     bot_id: UUID
     symbol: str
-    side: str  # 'buy' or 'sell'
-    order_type: str  # 'limit' or 'market'
+    side: OrderSide
+    order_type: OrderType
     quantity: Decimal
     price: Decimal | None = None
     id: UUID = field(default_factory=uuid4)
@@ -186,7 +187,11 @@ class OrderManager:
         self,
         exchange: ExchangeConnector,
         db_session: AsyncSession,
-        on_order_filled: Callable[[ManagedOrder], None] | None = None,
+        on_order_filled: (
+            Callable[[ManagedOrder], Awaitable[Decimal]]
+            | Callable[[ManagedOrder], None]
+            | None
+        ) = None,
         notifier: Notifier | None = None,
         base_retry_delay: float = 1.0,
         max_retry_delay: float = 30.0,
@@ -804,8 +809,8 @@ class OrderManager:
             id=db_order.id,
             bot_id=db_order.bot_id,
             symbol=db_order.symbol,
-            side=db_order.side,
-            order_type=db_order.type,
+            side=cast(OrderSide, db_order.side),
+            order_type=cast(OrderType, db_order.type),
             quantity=db_order.quantity,
             price=db_order.price,
             state=state_map.get(db_order.status, OrderState.ERROR),
