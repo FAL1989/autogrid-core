@@ -486,6 +486,25 @@ class TestGridStrategyPositionTracking:
         avg = strategy.get_average_entry_price()
         assert avg == Decimal("48500")
 
+    def test_break_even_protection_shifts_sell_level(self) -> None:
+        strategy = GridStrategy(
+            symbol="BTC/USDT",
+            investment=Decimal("100"),
+            lower_price=Decimal("90"),
+            upper_price=Decimal("110"),
+            grid_count=4,
+            min_sell_profit_pct=Decimal("0"),
+        )
+        level = strategy._levels[2]
+        level.position_qty = Decimal("0.1")
+        level.avg_buy_price = Decimal("108")
+
+        orders = strategy.calculate_orders(Decimal("101"), [])
+
+        sell_orders = [o for o in orders if o.side == "sell"]
+        assert len(sell_orders) == 1
+        assert sell_orders[0].price == Decimal("110")
+
 
 class TestGridStrategyUnrealizedPnL:
     """Tests for GridStrategy unrealized P&L calculation."""

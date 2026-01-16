@@ -49,6 +49,28 @@ class GridConfig(BaseModel):
     recenter_minutes: int = Field(
         360, ge=0, le=10080, description="Minutes between recenter checks"
     )
+    recenter_position_policy: Literal[
+        "ignore", "block_any", "block_outside_range"
+    ] = Field(
+        "ignore",
+        description="Policy for recentering when positions are open",
+    )
+    recenter_min_unrealized_pnl: float | None = Field(
+        None,
+        description="Minimum unrealized PnL required to recenter",
+    )
+    recenter_max_wait_minutes: int = Field(
+        0,
+        ge=0,
+        le=10080,
+        description="Force recenter after this many minutes even with loss",
+    )
+    min_sell_profit_pct: float | None = Field(
+        None,
+        ge=0,
+        le=100,
+        description="Minimum profit percent over average buy price for sells",
+    )
 
     @model_validator(mode="after")
     def validate_price_range(self) -> "GridConfig":

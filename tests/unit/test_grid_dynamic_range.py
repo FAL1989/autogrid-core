@@ -73,6 +73,90 @@ def test_apply_dynamic_bounds_preserves_positions() -> None:
     assert strategy.get_average_entry_price() == avg_before
 
 
+def test_recenter_blocked_by_open_position_policy() -> None:
+    strategy = GridStrategy(
+        symbol="BTC/USDT",
+        investment=Decimal("100"),
+        lower_price=Decimal("90"),
+        upper_price=Decimal("110"),
+        grid_count=4,
+        dynamic_range_enabled=True,
+        recenter_position_policy="block_any",
+    )
+    strategy._levels[0].position_qty = Decimal("0.1")
+
+    allowed, reason = strategy.can_recenter_pre_atr(Decimal("100"))
+
+    assert allowed is False
+    assert reason == "position_open"
+
+
+def test_recenter_blocks_when_pnl_below_threshold() -> None:
+    strategy = GridStrategy(
+        symbol="BTC/USDT",
+        investment=Decimal("100"),
+        lower_price=Decimal("90"),
+        upper_price=Decimal("110"),
+        grid_count=4,
+        dynamic_range_enabled=True,
+        recenter_min_unrealized_pnl=Decimal("0"),
+    )
+    level = strategy._levels[1]
+    level.position_qty = Decimal("0.1")
+    level.avg_buy_price = Decimal("105")
+
+    allowed, reason = strategy.can_recenter_pre_atr(Decimal("100"))
+
+    assert allowed is False
+    assert reason == "pnl_below_threshold"
+
+
+def test_recenter_allows_when_max_wait_elapsed() -> None:
+    now = datetime.now(timezone.utc)
+    strategy = GridStrategy(
+        symbol="BTC/USDT",
+        investment=Decimal("100"),
+        lower_price=Decimal("90"),
+        upper_price=Decimal("110"),
+        grid_count=4,
+        dynamic_range_enabled=True,
+        recenter_min_unrealized_pnl=Decimal("0"),
+        recenter_max_wait_minutes=60,
+    )
+    strategy._last_recenter_at = now - timedelta(minutes=120)
+    level = strategy._levels[1]
+    level.position_qty = Decimal("0.1")
+    level.avg_buy_price = Decimal("105")
+
+    allowed, reason = strategy.can_recenter_pre_atr(Decimal("100"), now=now)
+
+    assert allowed is True
+    assert reason == "max_wait_elapsed"
+
+
+def test_recenter_blocks_when_position_outside_new_bounds() -> None:
+    strategy = GridStrategy(
+        symbol="BTC/USDT",
+        investment=Decimal("100"),
+        lower_price=Decimal("90"),
+        upper_price=Decimal("110"),
+        grid_count=4,
+        dynamic_range_enabled=True,
+        recenter_position_policy="block_outside_range",
+    )
+    level = strategy._levels[1]
+    level.position_qty = Decimal("0.1")
+    level.avg_buy_price = Decimal("130")
+
+    allowed, reason = strategy.can_recenter_with_bounds(
+        lower_price=Decimal("80"),
+        upper_price=Decimal("120"),
+    )
+
+    assert allowed is False
+    assert reason == "position_outside_range"
+
+
 def test_calculate_atr_basic() -> None:
     ohlcv = [
         [0, 100, 110, 90, 105, 1],

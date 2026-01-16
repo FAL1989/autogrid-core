@@ -67,6 +67,10 @@ class GridStrategy(BaseStrategy):
         atr_timeframe: str = "1h",
         cooldown_minutes: int = 30,
         recenter_minutes: int = 360,
+        recenter_position_policy: str = "ignore",
+        recenter_min_unrealized_pnl: Decimal | None = None,
+        recenter_max_wait_minutes: int = 0,
+        min_sell_profit_pct: Decimal | None = None,
     ) -> None:
         """
         Initialize Grid Strategy.
@@ -90,11 +94,21 @@ class GridStrategy(BaseStrategy):
             raise ValueError("cooldown_minutes must be >= 0")
         if recenter_minutes < 0:
             raise ValueError("recenter_minutes must be >= 0")
+        if recenter_max_wait_minutes < 0:
+            raise ValueError("recenter_max_wait_minutes must be >= 0")
 
         if atr_multiplier is None:
             atr_multiplier = Decimal("1.5")
         if atr_multiplier <= 0:
             raise ValueError("atr_multiplier must be > 0")
+        if recenter_position_policy not in {
+            "ignore",
+            "block_any",
+            "block_outside_range",
+        }:
+            raise ValueError("recenter_position_policy must be a valid policy")
+        if min_sell_profit_pct is not None and min_sell_profit_pct < 0:
+            raise ValueError("min_sell_profit_pct must be >= 0")
 
         self.lower_price = lower_price
         self.upper_price = upper_price
@@ -105,6 +119,10 @@ class GridStrategy(BaseStrategy):
         self.atr_timeframe = atr_timeframe
         self.cooldown_minutes = cooldown_minutes
         self.recenter_minutes = recenter_minutes
+        self.recenter_position_policy = recenter_position_policy
+        self.recenter_min_unrealized_pnl = recenter_min_unrealized_pnl
+        self.recenter_max_wait_minutes = recenter_max_wait_minutes
+        self.min_sell_profit_pct = min_sell_profit_pct
 
         # Calculate grid parameters
         self.grid_spacing = (upper_price - lower_price) / Decimal(grid_count)
@@ -230,6 +248,16 @@ class GridStrategy(BaseStrategy):
                 if sell_index >= len(self._grid_prices):
                     continue
                 sell_price = self._grid_prices[sell_index]
+                if level.avg_buy_price is not None and self.min_sell_profit_pct is not None:
+                    min_sell_price = level.avg_buy_price * (
+                        Decimal("1") + (self.min_sell_profit_pct / Decimal("100"))
+                    )
+                    while sell_index < len(self._grid_prices) and sell_price < min_sell_price:
+                        sell_index += 1
+                        if sell_index < len(self._grid_prices):
+                            sell_price = self._grid_prices[sell_index]
+                    if sell_index >= len(self._grid_prices):
+                        continue
                 order = Order(
                     side="sell",
                     type="limit",
@@ -390,6 +418,45 @@ class GridStrategy(BaseStrategy):
         self._last_regrid_at = now
         self._last_recenter_at = now
 
+    def can_recenter_pre_atr(
+        self,
+        current_price: Decimal,
+        now: datetime | None = None,
+    ) -> tuple[bool, str]:
+        """Check recenter gates that do not require dynamic bounds."""
+        now = now or datetime.now(timezone.utc)
+        total_position = self.get_total_position()
+        if self.recenter_position_policy == "block_any" and total_position > 0:
+            return False, "position_open"
+        if self.recenter_min_unrealized_pnl is None:
+            return True, "ok"
+        if self.recenter_max_wait_minutes > 0 and self._last_recenter_at:
+            max_wait = timedelta(minutes=self.recenter_max_wait_minutes)
+            if (now - self._last_recenter_at) >= max_wait:
+                return True, "max_wait_elapsed"
+        if total_position <= 0:
+            return True, "no_position"
+        unrealized = self.get_unrealized_pnl(current_price)
+        if unrealized >= self.recenter_min_unrealized_pnl:
+            return True, "pnl_ok"
+        return False, "pnl_below_threshold"
+
+    def can_recenter_with_bounds(
+        self,
+        lower_price: Decimal,
+        upper_price: Decimal,
+    ) -> tuple[bool, str]:
+        """Check recenter gates that require computed bounds."""
+        if self.recenter_position_policy != "block_outside_range":
+            return True, "ok"
+        for level in self._levels.values():
+            if not level.has_position():
+                continue
+            anchor_price = level.avg_buy_price or level.price
+            if anchor_price < lower_price or anchor_price > upper_price:
+                return False, "position_outside_range"
+        return True, "ok"
+
     def should_stop(self) -> bool:
         """
         Check if strategy should stop.
@@ -490,6 +557,18 @@ class GridStrategy(BaseStrategy):
                 "atr_timeframe": self.atr_timeframe,
                 "cooldown_minutes": self.cooldown_minutes,
                 "recenter_minutes": self.recenter_minutes,
+                "recenter_position_policy": self.recenter_position_policy,
+                "recenter_min_unrealized_pnl": (
+                    float(self.recenter_min_unrealized_pnl)
+                    if self.recenter_min_unrealized_pnl is not None
+                    else None
+                ),
+                "recenter_max_wait_minutes": self.recenter_max_wait_minutes,
+                "min_sell_profit_pct": (
+                    float(self.min_sell_profit_pct)
+                    if self.min_sell_profit_pct is not None
+                    else None
+                ),
             }
         )
         return base_stats

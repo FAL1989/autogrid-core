@@ -351,6 +351,19 @@ class BotEngine:
         if not should_regrid:
             return open_orders
 
+        now = datetime.now(timezone.utc)
+        allowed, block_reason = self.strategy.can_recenter_pre_atr(
+            current_price=current_price,
+            now=now,
+        )
+        if not allowed:
+            logger.info(
+                "Dynamic grid recenter blocked (%s): bot=%s",
+                block_reason,
+                self.config.id,
+            )
+            return open_orders
+
         try:
             limit = max(self.strategy.atr_period + 2, 20)
             if self.exchange_timeout_seconds:
@@ -385,7 +398,18 @@ class BotEngine:
             logger.warning(f"ATR calculation failed: {e}")
             return open_orders
 
-        self.strategy.apply_dynamic_bounds(lower, upper, now=datetime.now(timezone.utc))
+        allowed, block_reason = self.strategy.can_recenter_with_bounds(lower, upper)
+        if not allowed:
+            logger.info(
+                "Dynamic grid recenter blocked (%s): lower=%s upper=%s bot=%s",
+                block_reason,
+                lower,
+                upper,
+                self.config.id,
+            )
+            return open_orders
+
+        self.strategy.apply_dynamic_bounds(lower, upper, now=now)
         await self._cancel_out_of_range_orders(open_orders, lower, upper)
 
         logger.info(

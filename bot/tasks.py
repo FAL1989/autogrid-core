@@ -263,6 +263,22 @@ async def _start_bot_async(
             atr_timeframe = str(config.get("atr_timeframe", "1h"))
             cooldown_minutes = int(config.get("cooldown_minutes", 30))
             recenter_minutes = int(config.get("recenter_minutes", 360))
+            recenter_position_policy = str(
+                config.get("recenter_position_policy", "ignore")
+            )
+            recenter_min_unrealized_pnl_raw = config.get("recenter_min_unrealized_pnl")
+            recenter_min_unrealized_pnl = (
+                Decimal(str(recenter_min_unrealized_pnl_raw))
+                if recenter_min_unrealized_pnl_raw is not None
+                else None
+            )
+            recenter_max_wait_minutes = int(config.get("recenter_max_wait_minutes", 0))
+            min_sell_profit_pct_raw = config.get("min_sell_profit_pct")
+            min_sell_profit_pct = (
+                Decimal(str(min_sell_profit_pct_raw))
+                if min_sell_profit_pct_raw is not None
+                else None
+            )
             strategy_instance = GridStrategy(
                 symbol=bot.symbol,
                 investment=investment_value,
@@ -275,6 +291,10 @@ async def _start_bot_async(
                 atr_timeframe=atr_timeframe,
                 cooldown_minutes=cooldown_minutes,
                 recenter_minutes=recenter_minutes,
+                recenter_position_policy=recenter_position_policy,
+                recenter_min_unrealized_pnl=recenter_min_unrealized_pnl,
+                recenter_max_wait_minutes=recenter_max_wait_minutes,
+                min_sell_profit_pct=min_sell_profit_pct,
             )
         elif bot.strategy == "dca":
             amount_per_buy = config.get("amount_per_buy", config.get("amount"))
@@ -764,7 +784,22 @@ async def _tick_bot_async(bot_id: str, bot_data: dict[str, Any]) -> None:
 
 def _grid_config_signature(
     config: dict[str, Any],
-) -> tuple[Decimal, Decimal, int, Decimal, bool, int, Decimal, str, int, int] | None:
+) -> tuple[
+    Decimal,
+    Decimal,
+    int,
+    Decimal,
+    bool,
+    int,
+    Decimal,
+    str,
+    int,
+    int,
+    str,
+    Decimal | None,
+    int,
+    Decimal | None,
+] | None:
     """Build a comparable signature for grid config."""
     try:
         lower_price = Decimal(str(config["lower_price"]))
@@ -777,6 +812,20 @@ def _grid_config_signature(
         atr_timeframe = str(config.get("atr_timeframe", "1h"))
         cooldown_minutes = int(config.get("cooldown_minutes", 30))
         recenter_minutes = int(config.get("recenter_minutes", 360))
+        recenter_position_policy = str(config.get("recenter_position_policy", "ignore"))
+        recenter_min_unrealized_pnl_raw = config.get("recenter_min_unrealized_pnl")
+        recenter_min_unrealized_pnl = (
+            Decimal(str(recenter_min_unrealized_pnl_raw))
+            if recenter_min_unrealized_pnl_raw is not None
+            else None
+        )
+        recenter_max_wait_minutes = int(config.get("recenter_max_wait_minutes", 0))
+        min_sell_profit_pct_raw = config.get("min_sell_profit_pct")
+        min_sell_profit_pct = (
+            Decimal(str(min_sell_profit_pct_raw))
+            if min_sell_profit_pct_raw is not None
+            else None
+        )
     except (KeyError, ValueError, TypeError):
         return None
 
@@ -791,6 +840,10 @@ def _grid_config_signature(
         atr_timeframe,
         cooldown_minutes,
         recenter_minutes,
+        recenter_position_policy,
+        recenter_min_unrealized_pnl,
+        recenter_max_wait_minutes,
+        min_sell_profit_pct,
     )
 
 
@@ -850,6 +903,10 @@ async def _refresh_running_bot_config(bot_id: str, bot_data: dict[str, Any]) -> 
         atr_timeframe,
         cooldown_minutes,
         recenter_minutes,
+        recenter_position_policy,
+        recenter_min_unrealized_pnl,
+        recenter_max_wait_minutes,
+        min_sell_profit_pct,
     ) = new_signature
 
     logger.info(
@@ -873,6 +930,10 @@ async def _refresh_running_bot_config(bot_id: str, bot_data: dict[str, Any]) -> 
         atr_timeframe=atr_timeframe,
         cooldown_minutes=cooldown_minutes,
         recenter_minutes=recenter_minutes,
+        recenter_position_policy=recenter_position_policy,
+        recenter_min_unrealized_pnl=recenter_min_unrealized_pnl,
+        recenter_max_wait_minutes=recenter_max_wait_minutes,
+        min_sell_profit_pct=min_sell_profit_pct,
     )
 
     # Preserve realized P&L for continuity
