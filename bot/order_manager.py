@@ -731,6 +731,12 @@ class OrderManager:
                     },
                 )
                 try:
+                    logger.info(
+                        "Notify fill: bot=%s user=%s order=%s",
+                        order.bot_id,
+                        user_id,
+                        order.id,
+                    )
                     await asyncio.wait_for(
                         self.notifier.notify_order_filled(
                             user_id,
@@ -740,6 +746,11 @@ class OrderManager:
                             order.average_fill_price or order.price or Decimal("0"),
                         ),
                         timeout=5,
+                    )
+                    logger.info(
+                        "Notify fill delivered: bot=%s order=%s",
+                        order.bot_id,
+                        order.id,
                     )
                 except Exception as e:
                     logger.warning(f"Failed to send fill notification: {e}")
