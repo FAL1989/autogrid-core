@@ -731,7 +731,7 @@ class OrderManager:
                     },
                 )
                 try:
-                    asyncio.create_task(
+                    await asyncio.wait_for(
                         self.notifier.notify_order_filled(
                             user_id,
                             order.symbol,
@@ -739,9 +739,10 @@ class OrderManager:
                             order.filled_quantity,
                             order.average_fill_price or order.price or Decimal("0"),
                         ),
+                        timeout=5,
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to queue fill notification: {e}")
+                    logger.warning(f"Failed to send fill notification: {e}")
 
                 if self.on_order_filled:
                     if asyncio.iscoroutinefunction(self.on_order_filled):
