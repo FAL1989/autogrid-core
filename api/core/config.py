@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str | None = None
     telegram_link_token_exp_minutes: int = 30
 
+    # Platform fees (for trades via Telegram)
+    # Set to 0.0 by default (opt-in). Configure PLATFORM_FEE_PERCENT env var to enable.
+    platform_fee_percent: float = 0.0
+
     @property
     def async_database_url(self) -> str:
         """Convert database URL to async format for asyncpg."""

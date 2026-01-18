@@ -256,3 +256,25 @@ CREATE TABLE IF NOT EXISTS bot_events (
 
 CREATE INDEX IF NOT EXISTS idx_bot_events_bot_id ON bot_events(bot_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_bot_events_event_type ON bot_events(event_type);
+
+-- =============================================================================
+-- Platform Fees (Sprint 3B)
+-- =============================================================================
+
+-- Add source column to orders table (api, telegram, etc.)
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'api';
+
+-- Platform fees table for tracking fees on telegram trades
+CREATE TABLE IF NOT EXISTS platform_fees (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
+    trade_id UUID,
+    amount DECIMAL(20, 8) NOT NULL,
+    currency VARCHAR(10) DEFAULT 'USDT',
+    source VARCHAR(20) NOT NULL DEFAULT 'telegram',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_platform_fees_user_id ON platform_fees(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_platform_fees_order_id ON platform_fees(order_id);

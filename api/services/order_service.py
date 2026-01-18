@@ -11,7 +11,8 @@ from uuid import UUID
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.models.orm import Bot, Order, Trade
+from api.core.config import get_settings
+from api.models.orm import Bot, Order, PlatformFee, Trade
 
 
 class OrderService:
@@ -129,6 +130,7 @@ class OrderService:
         quantity: Decimal,
         price: Decimal | None = None,
         exchange_order_id: str | None = None,
+        source: str = "api",
     ) -> Order:
         """
         Create a new order.
@@ -141,6 +143,7 @@ class OrderService:
             quantity: Order quantity.
             price: Order price (required for limit orders).
             exchange_order_id: Exchange-assigned order ID.
+            source: Order source ('api', 'telegram', etc.).
 
         Returns:
             The created Order object.
@@ -155,6 +158,7 @@ class OrderService:
             exchange_order_id=exchange_order_id,
             status="pending",
             filled_quantity=Decimal("0"),
+            source=source,
         )
         self.db.add(order)
         await self.db.flush()
@@ -274,6 +278,7 @@ class OrderService:
         fee: Decimal = Decimal("0"),
         fee_currency: str | None = None,
         realized_pnl: Decimal | None = None,
+        source: str = "api",
     ) -> Trade:
         """
         Create a trade record.
@@ -288,6 +293,7 @@ class OrderService:
             fee: Trading fee.
             fee_currency: Fee currency.
             realized_pnl: Realized P&L (if closing position).
+            source: Trade source ('api', 'telegram', etc.).
 
         Returns:
             The created Trade object.
@@ -306,7 +312,67 @@ class OrderService:
         self.db.add(trade)
         await self.db.flush()
         await self.db.refresh(trade)
+
+        # Record platform fee for telegram trades
+        if source == "telegram":
+            await self._record_platform_fee(
+                bot_id=bot_id,
+                order_id=order_id,
+                trade_id=trade.id,
+                symbol=symbol,
+                price=price,
+                quantity=quantity,
+                source=source,
+            )
+
         return trade
+
+    async def _record_platform_fee(
+        self,
+        bot_id: UUID,
+        order_id: UUID | None,
+        trade_id: UUID,
+        symbol: str,
+        price: Decimal,
+        quantity: Decimal,
+        source: str = "telegram",
+    ) -> PlatformFee | None:
+        """
+        Record a platform fee for telegram trades.
+
+        Fee is calculated as platform_fee_percent of trade value.
+        Currency is derived from the quote currency of the trading pair.
+        """
+        settings = get_settings()
+        fee_percent = Decimal(str(settings.platform_fee_percent / 100))
+
+        if fee_percent <= 0:
+            return None
+
+        # Calculate fee based on trade value
+        trade_value = price * quantity
+        platform_fee = trade_value * fee_percent
+
+        # Extract quote currency from symbol (e.g., "BTC/USDT" -> "USDT")
+        quote_currency = "USDT"  # fallback
+        if "/" in symbol:
+            quote_currency = symbol.split("/")[1]
+
+        # Get user_id from bot
+        bot = await self.db.get(Bot, bot_id)
+        user_id = bot.user_id if bot else None
+
+        fee_record = PlatformFee(
+            user_id=user_id,
+            order_id=order_id,
+            trade_id=trade_id,
+            amount=platform_fee,
+            currency=quote_currency,
+            source=source,
+        )
+        self.db.add(fee_record)
+        await self.db.flush()
+        return fee_record
 
     async def get_bot_statistics(self, bot_id: UUID) -> dict:
         """

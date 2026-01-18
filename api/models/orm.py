@@ -415,6 +415,11 @@ class Order(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    source: Mapped[str] = mapped_column(
+        String(20),
+        default="api",
+        server_default=text("'api'"),
+    )
 
     # Relationships
     bot: Mapped["Bot"] = relationship(back_populates="orders")
@@ -494,6 +499,49 @@ class Trade(Base):
     # Relationships
     bot: Mapped["Bot"] = relationship(back_populates="trades")
     order: Mapped["Order | None"] = relationship(back_populates="trades")
+
+
+class PlatformFee(Base):
+    """Platform fee record for telegram trades."""
+
+    __tablename__ = "platform_fees"
+    __table_args__ = {"extend_existing": True}
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    order_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("orders.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    trade_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+    )
+    amount: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    currency: Mapped[str] = mapped_column(
+        String(10),
+        default="USDT",
+    )
+    source: Mapped[str] = mapped_column(
+        String(20),
+        default="telegram",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("NOW()"),
+    )
 
 
 class BotMetrics(Base):
