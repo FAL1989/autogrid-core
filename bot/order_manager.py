@@ -31,6 +31,8 @@ class OrderState(Enum):
 
     State machine transitions:
     PENDING -> SUBMITTING -> OPEN -> PARTIALLY_FILLED -> FILLED
+                    |-> FILLED (immediate fill)
+                    |-> CANCELLED (immediate cancel)
                     |-> REJECTED
                     |-> ERROR
     OPEN -> CANCELLING -> CANCELLED
@@ -53,7 +55,13 @@ class OrderState(Enum):
 # Valid state transitions
 ORDER_TRANSITIONS: dict[OrderState, list[OrderState]] = {
     OrderState.PENDING: [OrderState.SUBMITTING, OrderState.CANCELLED],
-    OrderState.SUBMITTING: [OrderState.OPEN, OrderState.REJECTED, OrderState.ERROR],
+    OrderState.SUBMITTING: [
+        OrderState.OPEN,
+        OrderState.FILLED,
+        OrderState.CANCELLED,
+        OrderState.REJECTED,
+        OrderState.ERROR,
+    ],
     OrderState.OPEN: [
         OrderState.PARTIALLY_FILLED,
         OrderState.FILLED,
@@ -251,20 +259,36 @@ class OrderManager:
             if order.exchange_id:
                 self._exchange_id_map[order.exchange_id] = order.id
 
-            # Update state based on exchange response
-            status = result.get("status", "open")
-            if status == "open":
-                self._transition_state(order, OrderState.OPEN)
-            elif status == "closed":
-                self._transition_state(order, OrderState.FILLED)
-                order.filled_quantity = order.quantity
-                order.filled_at = datetime.now(timezone.utc)
-            elif status == "canceled":
-                self._transition_state(order, OrderState.CANCELLED)
-
-            # Cache and persist
+            # Cache before applying status updates
             self._orders[order.id] = order
-            await self._persist_order(order)
+
+            # Update state based on exchange response
+            status_raw = result.get("status", "open")
+            status = str(status_raw or "open").lower()
+
+            if status in ("closed", "filled", "trade"):
+                if "filled" not in result and "z" not in result:
+                    result = {**result, "filled": str(order.quantity)}
+                await self._process_exchange_update(order, result)
+            elif status in ("canceled", "cancelled", "expired"):
+                self._transition_state(order, OrderState.CANCELLED)
+                await self._persist_order(order)
+            elif status == "rejected":
+                self._transition_state(order, OrderState.REJECTED)
+                await self._persist_order(order)
+            else:
+                self._transition_state(order, OrderState.OPEN)
+                filled_value = result.get("filled", result.get("z"))
+                filled_amount = Decimal("0")
+                if filled_value is not None:
+                    try:
+                        filled_amount = Decimal(str(filled_value))
+                    except Exception:
+                        filled_amount = Decimal("0")
+                if filled_amount > 0:
+                    await self._process_exchange_update(order, result)
+                else:
+                    await self._persist_order(order)
 
             logger.info(
                 f"Order submitted: {order.id} -> exchange_id={order.exchange_id}"

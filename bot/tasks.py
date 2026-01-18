@@ -1435,6 +1435,7 @@ async def _reconcile_bot_trades_async(
     created = 0
     skipped = 0
     connector = None
+    notifier = get_notifier()
 
     try:
         async with async_session() as db:
@@ -1578,6 +1579,8 @@ async def _reconcile_bot_trades_async(
             await db.flush()
 
             if touched_order_ids:
+                from api.core.ws_manager import broadcast_order_update
+
                 totals = (
                     await db.execute(
                         select(
@@ -1600,14 +1603,59 @@ async def _reconcile_bot_trades_async(
                     order_obj = orders_by_id.get(order_id)
                     if not order_obj:
                         continue
+                    prior_status = order_obj.status
                     order_obj.filled_quantity = filled_qty
                     if filled_qty > 0:
                         order_obj.average_fill_price = notional / filled_qty
+                    transitioned_to_filled = False
                     if filled_qty >= order_obj.quantity:
                         order_obj.status = "filled"
                         order_obj.filled_at = datetime.now(timezone.utc)
+                        transitioned_to_filled = prior_status != "filled"
                     elif filled_qty > 0:
                         order_obj.status = "partially_filled"
+
+                    if transitioned_to_filled:
+                        try:
+                            await broadcast_order_update(
+                                user_id=str(bot.user_id),
+                                bot_id=str(bot.id),
+                                order={
+                                    "id": str(order_obj.id),
+                                    "status": order_obj.status,
+                                    "filled_quantity": float(
+                                        order_obj.filled_quantity or 0
+                                    ),
+                                    "average_fill_price": float(
+                                        order_obj.average_fill_price or 0
+                                    ),
+                                },
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                "Failed to broadcast order update for %s: %s",
+                                order_obj.id,
+                                e,
+                            )
+                        try:
+                            await asyncio.wait_for(
+                                notifier.notify_order_filled(
+                                    bot.user_id,
+                                    order_obj.symbol,
+                                    order_obj.side,
+                                    order_obj.filled_quantity,
+                                    order_obj.average_fill_price
+                                    or order_obj.price
+                                    or Decimal("0"),
+                                ),
+                                timeout=5,
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                "Failed to send fill notification for %s: %s",
+                                order_obj.id,
+                                e,
+                            )
             realized_sum = (
                 await db.execute(
                     select(func.coalesce(func.sum(Trade.realized_pnl), 0)).where(

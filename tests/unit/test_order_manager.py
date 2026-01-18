@@ -61,6 +61,14 @@ class TestOrderState:
         """SUBMITTING should be able to transition to OPEN."""
         assert OrderState.OPEN in ORDER_TRANSITIONS[OrderState.SUBMITTING]
 
+    def test_submitting_can_transition_to_filled(self) -> None:
+        """SUBMITTING should be able to transition to FILLED."""
+        assert OrderState.FILLED in ORDER_TRANSITIONS[OrderState.SUBMITTING]
+
+    def test_submitting_can_transition_to_cancelled(self) -> None:
+        """SUBMITTING should be able to transition to CANCELLED."""
+        assert OrderState.CANCELLED in ORDER_TRANSITIONS[OrderState.SUBMITTING]
+
     def test_submitting_can_transition_to_rejected(self) -> None:
         """SUBMITTING should be able to transition to REJECTED."""
         assert OrderState.REJECTED in ORDER_TRANSITIONS[OrderState.SUBMITTING]
@@ -282,6 +290,30 @@ class TestOrderManager:
         assert result.state == OrderState.OPEN
         assert result.exchange_id == "exchange-order-123"
         assert result.submitted_at is not None
+
+    async def test_submit_order_immediate_fill(
+        self,
+        order_manager: OrderManager,
+        sample_order: ManagedOrder,
+    ) -> None:
+        """Immediate fill should transition to FILLED and trigger callback."""
+        order_manager.exchange.create_order = AsyncMock(
+            return_value={
+                "id": "exchange-order-123",
+                "status": "closed",
+                "filled": 0.1,
+                "average": 50100.0,
+            }
+        )
+        filled_callback = MagicMock()
+        order_manager.on_order_filled = filled_callback
+
+        result = await order_manager.submit_order(sample_order)
+
+        assert result.state == OrderState.FILLED
+        assert result.filled_quantity == Decimal("0.1")
+        assert result.average_fill_price == Decimal("50100.0")
+        filled_callback.assert_called_once_with(sample_order)
 
     async def test_submit_order_transitions_through_submitting(
         self,
