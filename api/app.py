@@ -15,7 +15,7 @@ from sqlalchemy import text
 from api.core.config import get_settings
 from api.core.database import close_db, engine
 from api.core.rate_limiter import close_redis, init_redis
-from api.routes import auth, backtest, bots, credentials, orders, reports, ws
+from api.routes import auth, backtest, bots, credentials, orders, portfolio, reports, ws
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +82,7 @@ def create_app() -> FastAPI:
         credentials.router, prefix="/api/v1/credentials", tags=["Credentials"]
     )
     app.include_router(orders.router, prefix="/api/v1/orders", tags=["Orders"])
+    app.include_router(portfolio.router, prefix="/api/v1/portfolio", tags=["Portfolio"])
     app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
     app.include_router(ws.router, tags=["WebSocket"])
 
