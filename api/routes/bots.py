@@ -50,11 +50,11 @@ class GridConfig(BaseModel):
     recenter_minutes: int = Field(
         360, ge=0, le=10080, description="Minutes between recenter checks"
     )
-    recenter_position_policy: Literal[
-        "ignore", "block_any", "block_outside_range"
-    ] = Field(
-        "ignore",
-        description="Policy for recentering when positions are open",
+    recenter_position_policy: Literal["ignore", "block_any", "block_outside_range"] = (
+        Field(
+            "ignore",
+            description="Policy for recentering when positions are open",
+        )
     )
     recenter_min_unrealized_pnl: float | None = Field(
         None,

@@ -32,7 +32,9 @@ except Exception:
 
 if notifications_routes:
     app.include_router(
-        notifications_routes.router, prefix="/api/v1/notifications", tags=["Notifications"]
+        notifications_routes.router,
+        prefix="/api/v1/notifications",
+        tags=["Notifications"],
     )
 
 # Stripe routes
@@ -42,9 +44,7 @@ except Exception:
     stripe_routes = None
 
 if stripe_routes:
-    app.include_router(
-        stripe_routes.router, prefix="/api/v1/stripe", tags=["Stripe"]
-    )
+    app.include_router(stripe_routes.router, prefix="/api/v1/stripe", tags=["Stripe"])
 
 # Health routes (cloud-specific with detailed checks)
 try:
@@ -63,6 +63,7 @@ if cloud_health_routes:
 
 try:
     from cloud_api.middleware.plan_limits import PlanLimitsMiddleware
+
     app.add_middleware(PlanLimitsMiddleware)
 except Exception:
     pass  # Middleware not available - skip

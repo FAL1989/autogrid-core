@@ -52,6 +52,7 @@ def _is_engine_runtime() -> bool:
     """Check if engine runtime is enabled."""
     return settings.bot_runtime_mode.lower() == "engine"
 
+
 # Beat schedule for periodic tasks
 celery_app.conf.beat_schedule = {
     "check-bot-health-every-minute": {
@@ -811,22 +812,25 @@ async def _tick_bot_async(bot_id: str, bot_data: dict[str, Any]) -> None:
 
 def _grid_config_signature(
     config: dict[str, Any],
-) -> tuple[
-    Decimal,
-    Decimal,
-    int,
-    Decimal,
-    bool,
-    int,
-    Decimal,
-    str,
-    int,
-    int,
-    str,
-    Decimal | None,
-    int,
-    Decimal | None,
-] | None:
+) -> (
+    tuple[
+        Decimal,
+        Decimal,
+        int,
+        Decimal,
+        bool,
+        int,
+        Decimal,
+        str,
+        int,
+        int,
+        str,
+        Decimal | None,
+        int,
+        Decimal | None,
+    ]
+    | None
+):
     """Build a comparable signature for grid config."""
     try:
         lower_price = Decimal(str(config["lower_price"]))

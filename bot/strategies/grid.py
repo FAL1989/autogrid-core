@@ -248,11 +248,17 @@ class GridStrategy(BaseStrategy):
                 if sell_index >= len(self._grid_prices):
                     continue
                 sell_price = self._grid_prices[sell_index]
-                if level.avg_buy_price is not None and self.min_sell_profit_pct is not None:
+                if (
+                    level.avg_buy_price is not None
+                    and self.min_sell_profit_pct is not None
+                ):
                     min_sell_price = level.avg_buy_price * (
                         Decimal("1") + (self.min_sell_profit_pct / Decimal("100"))
                     )
-                    while sell_index < len(self._grid_prices) and sell_price < min_sell_price:
+                    while (
+                        sell_index < len(self._grid_prices)
+                        and sell_price < min_sell_price
+                    ):
                         sell_index += 1
                         if sell_index < len(self._grid_prices):
                             sell_price = self._grid_prices[sell_index]

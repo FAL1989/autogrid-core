@@ -130,9 +130,7 @@ async def portfolio_summary(
                     continue
 
                 asset_symbol = str(asset).upper()
-                price = await _resolve_asset_price(
-                    connector, asset_symbol, price_cache
-                )
+                price = await _resolve_asset_price(connector, asset_symbol, price_cache)
                 if price is None:
                     missing_prices.add(asset_symbol)
                     continue
