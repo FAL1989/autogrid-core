@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     bot_tick_timeout_seconds: int = 15
     order_sync_timeout_seconds: int = 10
 
+    # Bot runtime
+    bot_runtime_mode: str = "celery"  # celery | engine
+    engine_tick_interval_seconds: float = 1.0
+    engine_supervisor_interval_seconds: float = 5.0
+
     # Celery
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/0"

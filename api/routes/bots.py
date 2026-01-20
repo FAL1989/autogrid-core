@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.core.config import get_settings
 from api.core.database import get_db
 from api.core.dependencies import get_current_user
 from api.models.orm import User
@@ -410,6 +411,14 @@ async def start_bot(
     await bot_service.update_status(bot_id, "starting")
     await db.commit()
 
+    settings = get_settings()
+    if settings.bot_runtime_mode.lower() == "engine":
+        return BotActionResponse(
+            bot_id=bot_id,
+            status="starting",
+            message="Bot start queued for engine runtime",
+        )
+
     # Dispatch Celery task to start the bot
     task = start_trading_bot.delay(str(bot_id))
 
@@ -471,6 +480,14 @@ async def stop_bot(
         metadata=metadata,
     )
     await db.commit()
+
+    settings = get_settings()
+    if settings.bot_runtime_mode.lower() == "engine":
+        return BotActionResponse(
+            bot_id=bot_id,
+            status="stopping",
+            message="Bot stop queued for engine runtime",
+        )
 
     # Dispatch Celery task to stop the bot
     task = stop_trading_bot.delay(

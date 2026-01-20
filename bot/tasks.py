@@ -47,6 +47,11 @@ celery_app.conf.update(
     worker_pool=settings.celery_worker_pool,
 )
 
+
+def _is_engine_runtime() -> bool:
+    """Check if engine runtime is enabled."""
+    return settings.bot_runtime_mode.lower() == "engine"
+
 # Beat schedule for periodic tasks
 celery_app.conf.beat_schedule = {
     "check-bot-health-every-minute": {
@@ -125,6 +130,8 @@ def _run_async(coro):
 
 async def _maybe_rehydrate_running_bots() -> dict:
     """Rehydrate running bots once per worker."""
+    if _is_engine_runtime():
+        return {"status": "skipped", "reason": "engine_runtime"}
     global _rehydrate_attempted
     if _rehydrate_attempted:
         return {"status": "skipped", "rehydrated": 0}
@@ -139,6 +146,9 @@ async def _maybe_rehydrate_running_bots() -> dict:
 @worker_ready.connect
 def _on_worker_ready(**_kwargs) -> None:
     """Kick off rehydration when the worker is ready."""
+    if _is_engine_runtime():
+        logger.info("Engine runtime enabled; skipping Celery rehydration")
+        return
     try:
         _run_async(_maybe_rehydrate_running_bots())
     except Exception as exc:
@@ -168,6 +178,14 @@ def start_trading_bot(self, bot_id: str) -> dict:
         Dict with status and any error message
     """
     logger.info(f"Starting bot {bot_id}")
+
+    if _is_engine_runtime():
+        logger.info("Engine runtime enabled; skipping Celery start for %s", bot_id)
+        return {
+            "status": "skipped",
+            "bot_id": bot_id,
+            "message": "engine_runtime",
+        }
 
     try:
         result = _run_async(_start_bot_async(bot_id))
@@ -618,6 +636,8 @@ def tick_running_bots(self) -> dict:
 
     Grid bots are ticked regularly to place and manage orders.
     """
+    if _is_engine_runtime():
+        return {"status": "skipped", "reason": "engine_runtime"}
     ticked = 0
     skipped = 0
     errors = 0
@@ -775,11 +795,18 @@ async def _tick_bot_async(bot_id: str, bot_data: dict[str, Any]) -> None:
 
     if engine.strategy.should_stop():
         logger.info(f"Bot {bot_id} requested stop by strategy")
-        stop_trading_bot.delay(
-            bot_id,
-            source="strategy",
-            reason="strategy_stop",
-        )
+        if _is_engine_runtime():
+            await _stop_bot_async(
+                bot_id,
+                source="strategy",
+                reason="strategy_stop",
+            )
+        else:
+            stop_trading_bot.delay(
+                bot_id,
+                source="strategy",
+                reason="strategy_stop",
+            )
 
 
 def _grid_config_signature(
@@ -1306,7 +1333,7 @@ async def _poll_orders_async(bot_id: str) -> dict:
     """Async implementation of order polling."""
     bot_data = _running_bots.get(bot_id)
     if not bot_data:
-        return {"status": "not_running", "bot_id": bot_id}
+        return await _sync_bot_metrics_db_only(bot_id)
 
     order_manager = bot_data.get("order_manager")
     if not order_manager:
@@ -1373,6 +1400,34 @@ def reconcile_running_bots_trades(self) -> dict:
             logger.error(f"Trade reconcile failed for bot {bot_id}: {e}")
 
     return {"status": "ok", "created": created, "skipped": skipped, "errors": errors}
+
+
+async def _list_running_bot_ids_async() -> list[str]:
+    """List bot IDs currently marked as running."""
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+
+    from api.core.config import get_settings
+    from api.models.orm import Bot
+
+    settings = get_settings()
+    engine = create_async_engine(settings.async_database_url)
+    async_session = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    async with async_session() as db:
+        result = await db.execute(select(Bot.id).where(Bot.status == "running"))
+        bot_ids = [str(row[0]) for row in result.all()]
+
+    await engine.dispose()
+    return bot_ids
 
 
 async def _list_recent_bot_ids_async(hours: int = 24) -> list[str]:
@@ -1688,6 +1743,8 @@ def check_circuit_breakers(self) -> dict:
 
     If a circuit breaker is tripped, stop the bot.
     """
+    if _is_engine_runtime():
+        return {"status": "skipped", "reason": "engine_runtime"}
     tripped = 0
 
     for bot_id, bot_data in list(_running_bots.items()):
@@ -1734,6 +1791,8 @@ def check_bot_health(self) -> dict:
     - Check for stale orders
     - Update bot metrics
     """
+    if _is_engine_runtime():
+        return {"status": "skipped", "reason": "engine_runtime"}
     healthy = 0
     unhealthy = 0
 
@@ -1768,7 +1827,14 @@ def sync_running_bots_metrics(self) -> dict:
     synced = 0
     errors = 0
 
-    for bot_id in list(_running_bots.keys()):
+    bot_ids = list(_running_bots.keys())
+    if _is_engine_runtime():
+        try:
+            bot_ids = _run_async(_list_running_bot_ids_async())
+        except Exception as e:
+            logger.error(f"Failed to list running bots for metrics: {e}")
+
+    for bot_id in bot_ids:
         try:
             sync_bot_metrics.delay(bot_id)
             synced += 1
@@ -1893,6 +1959,53 @@ async def _sync_bot_metrics_async(bot_id: str) -> dict:
         "bot_id": bot_id,
         "realized_pnl": str(realized_pnl),
         "unrealized_pnl": str(unrealized_pnl),
+    }
+
+
+async def _sync_bot_metrics_db_only(bot_id: str) -> dict:
+    """Sync bot metrics using database data only."""
+    from sqlalchemy import func, select, update
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+
+    from api.core.config import get_settings
+    from api.models.orm import Bot, Trade
+
+    settings = get_settings()
+    engine = create_async_engine(settings.async_database_url)
+    async_session = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    async with async_session() as db:
+        realized_sum = (
+            await db.execute(
+                select(func.coalesce(func.sum(Trade.realized_pnl), 0)).where(
+                    Trade.bot_id == UUID(bot_id)
+                )
+            )
+        ).scalar_one()
+        realized_pnl = Decimal(str(realized_sum))
+        await db.execute(
+            update(Bot)
+            .where(Bot.id == UUID(bot_id))
+            .values(realized_pnl=realized_pnl, unrealized_pnl=Decimal("0"))
+        )
+        await db.commit()
+
+    await engine.dispose()
+
+    return {
+        "status": "ok",
+        "bot_id": bot_id,
+        "realized_pnl": str(realized_pnl),
+        "unrealized_pnl": "0",
+        "source": "db_only",
     }
 
 

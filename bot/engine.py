@@ -139,8 +139,9 @@ class BotEngine:
         self._state.is_running = True
 
         try:
-            # Connect to exchange
-            await self.exchange.connect()
+            # Connect to exchange if not connected
+            if not getattr(self.exchange, "is_connected", False):
+                await self.exchange.connect()
 
             # Main loop
             while self._state.is_running:

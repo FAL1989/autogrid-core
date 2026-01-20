@@ -16,5 +16,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY bot/ ./bot/
 COPY api/ ./api/
 
-# Run the bot engine
-CMD ["python", "-m", "bot.engine"]
+# Run the bot engine runtime
+CMD ["python", "-m", "bot.engine_runner"]
