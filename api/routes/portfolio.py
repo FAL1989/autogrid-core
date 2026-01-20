@@ -155,7 +155,13 @@ async def portfolio_summary(
     bots_result = await db.execute(select(Bot).where(Bot.user_id == current_user.id))
     bots = list(bots_result.scalars().all())
 
-    total_pnl = sum((bot.realized_pnl + bot.unrealized_pnl) for bot in bots)
+    total_pnl = sum(
+        (
+            Decimal(str(bot.realized_pnl or 0))
+            + Decimal(str(bot.unrealized_pnl or 0))
+        )
+        for bot in bots
+    )
     total_investment = sum(
         Decimal(str(bot.config.get("investment", 0) or 0)) for bot in bots
     )
