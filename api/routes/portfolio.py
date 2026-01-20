@@ -156,10 +156,7 @@ async def portfolio_summary(
     bots = list(bots_result.scalars().all())
 
     total_pnl = sum(
-        (
-            Decimal(str(bot.realized_pnl or 0))
-            + Decimal(str(bot.unrealized_pnl or 0))
-        )
+        (Decimal(str(bot.realized_pnl or 0)) + Decimal(str(bot.unrealized_pnl or 0)))
         for bot in bots
     )
     total_investment = sum(
