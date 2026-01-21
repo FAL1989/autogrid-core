@@ -88,6 +88,14 @@ class DCAStrategy(BaseStrategy):
             return Decimal("0")
         return self._total_spent / self._total_quantity
 
+    def update_investment(self, investment: Decimal) -> None:
+        """Update investment budget."""
+        if investment <= 0:
+            raise ValueError("investment must be positive")
+        if investment < self._total_spent:
+            raise ValueError("investment cannot be below total spent")
+        self.investment = investment
+
     def calculate_orders(
         self,
         current_price: Decimal,

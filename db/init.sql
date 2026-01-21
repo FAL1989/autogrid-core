@@ -64,6 +64,43 @@ CREATE TABLE IF NOT EXISTS bot_events (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Risk state table (one row per bot)
+CREATE TABLE IF NOT EXISTS risk_states (
+    bot_id UUID PRIMARY KEY REFERENCES bots(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'ok',
+    equity_peak DECIMAL(20, 8) DEFAULT 0 NOT NULL,
+    last_equity DECIMAL(20, 8) DEFAULT 0 NOT NULL,
+    daily_peak DECIMAL(20, 8) DEFAULT 0 NOT NULL,
+    weekly_peak DECIMAL(20, 8) DEFAULT 0 NOT NULL,
+    monthly_peak DECIMAL(20, 8) DEFAULT 0 NOT NULL,
+    daily_window_start TIMESTAMPTZ,
+    weekly_window_start TIMESTAMPTZ,
+    monthly_window_start TIMESTAMPTZ,
+    paused_until TIMESTAMPTZ,
+    pending_liquidation_until TIMESTAMPTZ,
+    pending_reason VARCHAR(50),
+    trailing_pause_until TIMESTAMPTZ,
+    reference_price DECIMAL(20, 8),
+    reinforcements_used INTEGER DEFAULT 0,
+    investment_override DECIMAL(20, 8),
+    last_event_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Risk events table
+CREATE TABLE IF NOT EXISTS risk_events (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    bot_id UUID NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    event_type VARCHAR(50) NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    message TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Orders table
 CREATE TABLE IF NOT EXISTS orders (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -169,6 +206,9 @@ CREATE INDEX IF NOT EXISTS idx_bots_user_id ON bots(user_id);
 CREATE INDEX IF NOT EXISTS idx_bots_status ON bots(status);
 CREATE INDEX IF NOT EXISTS idx_bot_events_bot_id ON bot_events(bot_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_bot_events_event_type ON bot_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_risk_states_status ON risk_states(status);
+CREATE INDEX IF NOT EXISTS idx_risk_events_bot_id ON risk_events(bot_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_risk_events_event_type ON risk_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_orders_bot_id ON orders(bot_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_grid_level ON orders(grid_level);
@@ -196,6 +236,10 @@ CREATE TRIGGER update_users_updated_at
 
 CREATE TRIGGER update_bots_updated_at
     BEFORE UPDATE ON bots
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_risk_states_updated_at
+    BEFORE UPDATE ON risk_states
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_orders_updated_at

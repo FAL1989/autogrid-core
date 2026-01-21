@@ -219,6 +219,7 @@ async def _start_bot_async(
     from bot.engine import BotConfig, BotEngine
     from bot.exchange.connector import CCXTConnector
     from bot.order_manager import OrderManager
+    from bot.risk_manager import RiskManager
     from bot.strategies.base import BaseStrategy
     from bot.strategies.dca import DCAStrategy
     from bot.strategies.grid import GridStrategy
@@ -437,6 +438,17 @@ async def _start_bot_async(
                 "message": f"Strategy {bot.strategy} not initialized",
             }
 
+        risk_profile = str(config.get("risk_profile", settings.risk_default_profile))
+        risk_manager = RiskManager(
+            bot_id=UUID(bot_id),
+            user_id=bot.user_id,
+            symbol=bot.symbol,
+            strategy=strategy_instance,
+            db_session=db,
+            profile=risk_profile,
+        )
+        await risk_manager.load_state()
+
         engine = BotEngine(
             config=BotConfig(
                 id=UUID(bot_id),
@@ -448,6 +460,7 @@ async def _start_bot_async(
             ),
             order_manager=order_manager,
             circuit_breaker=circuit_breaker,
+            risk_manager=risk_manager,
             notifier=notifier,
         )
 
@@ -458,6 +471,7 @@ async def _start_bot_async(
             "connector": connector,
             "order_manager": order_manager,
             "circuit_breaker": circuit_breaker,
+            "risk_manager": risk_manager,
             "ws_manager": None,
             "config": normalized_config,
             "symbol": bot.symbol,

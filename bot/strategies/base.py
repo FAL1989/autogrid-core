@@ -143,3 +143,7 @@ class BaseStrategy(ABC):
             "realized_pnl": float(self.realized_pnl),
             "total_filled_orders": len(self._filled_orders),
         }
+
+    def update_investment(self, investment: Decimal) -> None:
+        """Update investment amount for the strategy."""
+        self.investment = investment

@@ -85,6 +85,14 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    risk_states: Mapped[list["RiskState"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    risk_events: Mapped[list["RiskEvent"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
     backtests: Mapped[list["Backtest"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
@@ -234,6 +242,15 @@ class Bot(Base):
         back_populates="bot",
         cascade="all, delete-orphan",
     )
+    risk_state: Mapped["RiskState | None"] = relationship(
+        back_populates="bot",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    risk_events: Mapped[list["RiskEvent"]] = relationship(
+        back_populates="bot",
+        cascade="all, delete-orphan",
+    )
 
 
 class BotEvent(Base):
@@ -283,6 +300,153 @@ class BotEvent(Base):
 
     bot: Mapped["Bot"] = relationship(back_populates="events")
     user: Mapped["User | None"] = relationship(back_populates="bot_events")
+
+
+class RiskState(Base):
+    """Current risk state for a bot."""
+
+    __tablename__ = "risk_states"
+    __table_args__ = {"extend_existing": True}
+
+    bot_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("bots.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="ok",
+    )
+    equity_peak: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        default=Decimal("0"),
+    )
+    last_equity: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        default=Decimal("0"),
+    )
+    daily_peak: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        default=Decimal("0"),
+    )
+    weekly_peak: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        default=Decimal("0"),
+    )
+    monthly_peak: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        default=Decimal("0"),
+    )
+    daily_window_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    weekly_window_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    monthly_window_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    paused_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    pending_liquidation_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    pending_reason: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+    trailing_pause_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    reference_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 8),
+        nullable=True,
+    )
+    reinforcements_used: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+    )
+    investment_override: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 8),
+        nullable=True,
+    )
+    last_event_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("NOW()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("NOW()"),
+        onupdate=utcnow,
+    )
+
+    bot: Mapped["Bot"] = relationship(back_populates="risk_state")
+    user: Mapped["User | None"] = relationship(back_populates="risk_states")
+
+
+class RiskEvent(Base):
+    """Risk events for audit and UI timelines."""
+
+    __tablename__ = "risk_events"
+    __table_args__ = {"extend_existing": True}
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    bot_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("bots.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+    )
+    message: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    metadata_json: Mapped[dict] = mapped_column(
+        "metadata",
+        JSONB,
+        default=dict,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("NOW()"),
+    )
+
+    bot: Mapped["Bot"] = relationship(back_populates="risk_events")
+    user: Mapped["User | None"] = relationship(back_populates="risk_events")
 
 
 class Backtest(Base):

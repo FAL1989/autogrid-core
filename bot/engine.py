@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import ROUND_DOWN, Decimal
-from typing import Callable, Protocol, cast
+from typing import Any, Callable, Protocol, cast
 from uuid import UUID
 
 from api.core.config import get_settings
@@ -18,6 +18,7 @@ from bot.circuit_breaker import CircuitBreaker
 from bot.exchange.connector import ExchangeConnector
 from bot.notifications import Notifier, NullNotifier
 from bot.order_manager import ManagedOrder, OrderManager
+from bot.risk_manager import RiskAction, RiskDecision
 from bot.strategies.base import BaseStrategy, Order, OrderStatus
 
 logger = logging.getLogger(__name__)
@@ -38,12 +39,22 @@ class BotConfig:
 class RiskManager(Protocol):
     """Risk management interface."""
 
+    async def update_state(
+        self, current_price: Decimal, balance: dict[str, Any] | None
+    ) -> RiskDecision:
+        """Update risk state and return a decision."""
+        ...
+
     def check_order(self, order: Order, current_price: Decimal) -> bool:
         """Check if order passes risk checks."""
         ...
 
     def check_loss_limit(self, pnl: Decimal, investment: Decimal) -> bool:
         """Check if loss limit is exceeded."""
+        ...
+
+    def is_trading_allowed(self) -> bool:
+        """Return whether trading is allowed."""
         ...
 
 
@@ -231,12 +242,6 @@ class BotEngine:
         open_orders = await self._get_open_orders()
         open_orders = await self._maybe_update_dynamic_grid(current_price, open_orders)
 
-        # Let strategy decide on orders
-        new_orders = self.strategy.calculate_orders(
-            current_price=current_price,
-            open_orders=open_orders,
-        )
-
         balance = None
         try:
             if self.exchange_timeout_seconds:
@@ -250,6 +255,29 @@ class BotEngine:
             logger.warning("Balance fetch timed out for checks")
         except Exception as e:
             logger.warning(f"Failed to fetch balance for checks: {e}")
+
+        if self.risk_manager and balance is not None:
+            decision = await self.risk_manager.update_state(current_price, balance)
+            if decision.action in {
+                RiskAction.PAUSE,
+                RiskAction.PENDING_LIQUIDATION,
+                RiskAction.LIQUIDATE,
+            }:
+                await self._handle_risk_decision(
+                    decision,
+                    open_orders,
+                    balance,
+                    current_price,
+                )
+                return
+            if not self.risk_manager.is_trading_allowed():
+                return
+
+        # Let strategy decide on orders
+        new_orders = self.strategy.calculate_orders(
+            current_price=current_price,
+            open_orders=open_orders,
+        )
 
         min_notional = None
         min_qty = None
@@ -807,6 +835,81 @@ class BotEngine:
 
         # Stop the bot
         self._state.is_running = False
+
+    async def _handle_risk_decision(
+        self,
+        decision: RiskDecision,
+        open_orders: list[Order],
+        balance: dict[str, Any],
+        current_price: Decimal,
+    ) -> None:
+        """Handle risk manager decisions."""
+        if decision.action in {RiskAction.PAUSE, RiskAction.PENDING_LIQUIDATION}:
+            await self._cancel_open_orders(open_orders)
+            return
+
+        if decision.action == RiskAction.LIQUIDATE:
+            await self._cancel_open_orders(open_orders)
+            await self._liquidate_position(balance, current_price)
+            self._state.is_running = False
+
+    async def _cancel_open_orders(self, open_orders: list[Order]) -> None:
+        """Cancel all open orders for this bot."""
+        if self.order_manager:
+            await self.order_manager.cancel_all_orders(self.config.id)
+            return
+
+        for order in open_orders:
+            if order.exchange_id:
+                try:
+                    await self.exchange.cancel_order(
+                        order.exchange_id, self.config.symbol
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to cancel order %s: %s", order.exchange_id, exc
+                    )
+
+    async def _liquidate_position(
+        self,
+        balance: dict[str, Any],
+        current_price: Decimal,
+    ) -> None:
+        """Liquidate active base position at market."""
+        base_symbol = self.config.symbol.split("/")[0]
+        base_total = self._get_balance_value(balance, base_symbol)
+        if base_total <= 0:
+            return
+
+        if self.order_manager:
+            managed_order = ManagedOrder(
+                bot_id=self.config.id,
+                symbol=self.config.symbol,
+                side="sell",
+                order_type="market",
+                quantity=base_total,
+            )
+            await self.order_manager.submit_order(managed_order)
+            return
+
+        await self.exchange.create_order(
+            symbol=self.config.symbol,
+            order_type="market",
+            side="sell",
+            amount=float(base_total),
+            price=None,
+        )
+
+    @staticmethod
+    def _get_balance_value(balance: dict[str, Any], asset: str) -> Decimal:
+        asset = asset.upper()
+        total = balance.get("total") if isinstance(balance.get("total"), dict) else None
+        if total and asset in total:
+            return Decimal(str(total[asset]))
+        free = balance.get("free") if isinstance(balance.get("free"), dict) else None
+        if free and asset in free:
+            return Decimal(str(free[asset]))
+        return Decimal("0")
 
     def get_stats(self) -> dict:
         """Get bot statistics."""

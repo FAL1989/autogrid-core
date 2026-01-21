@@ -149,6 +149,11 @@ class GridStrategy(BaseStrategy):
             price = self.lower_price + (self.grid_spacing * Decimal(i))
             self._grid_prices.append(price)
 
+    def update_investment(self, investment: Decimal) -> None:
+        """Update investment and recompute sizing."""
+        self.investment = investment
+        self.amount_per_grid = investment / Decimal(self.grid_count)
+
     def _initialize_levels(self) -> None:
         """Initialize grid level tracking."""
         for i, price in enumerate(self._grid_prices):

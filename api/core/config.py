@@ -78,6 +78,19 @@ class Settings(BaseSettings):
     circuit_breaker_loss_window_seconds: int = 3600  # Loss tracking window
     circuit_breaker_half_open_orders: int = 3  # Orders allowed in HALF_OPEN
 
+    # Risk management defaults (conservative profile)
+    risk_default_profile: str = "conservative"
+    risk_daily_stop_percent: float = 4.0
+    risk_weekly_stop_percent: float = 10.0
+    risk_monthly_stop_percent: float = 20.0
+    risk_daily_pause_hours: int = 24
+    risk_two_step_wait_minutes: int = 30
+    risk_trailing_percent: float = 3.0
+    risk_trailing_wait_minutes: int = 30
+    risk_active_capital_percent: float = 70.0
+    risk_reserve_capital_percent: float = 30.0
+    risk_reinforcement_levels_percent: list[float] = [8.0, 15.0]
+
     # Logging
     log_level: str = "INFO"
 
