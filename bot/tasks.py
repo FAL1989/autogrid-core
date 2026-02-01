@@ -2236,28 +2236,24 @@ async def _cleanup_old_data_async(retention_days: int) -> dict:
 
             try:
                 # Count and delete old trades for this user's bots
-                count_stmt = text(
-                    """
+                count_stmt = text("""
                     SELECT COUNT(*) FROM trades t
                     JOIN bots b ON t.bot_id = b.id
                     WHERE b.user_id = :user_id AND t.timestamp < :cutoff
-                """
-                )
+                """)
                 count_result = await db.execute(
                     count_stmt, {"user_id": user_id, "cutoff": user_cutoff}
                 )
                 count = count_result.scalar() or 0
 
                 if count > 0:
-                    delete_stmt = text(
-                        """
+                    delete_stmt = text("""
                         DELETE FROM trades t
                         USING bots b
                         WHERE t.bot_id = b.id
                         AND b.user_id = :user_id
                         AND t.timestamp < :cutoff
-                    """
-                    )
+                    """)
                     await db.execute(
                         delete_stmt, {"user_id": user_id, "cutoff": user_cutoff}
                     )
