@@ -764,3 +764,100 @@ class BotMetrics(Base):
             "extend_existing": True,
         },
     )
+
+
+class OHLCVCache(Base):
+    """OHLCV cache for market data (TimescaleDB hypertable)."""
+
+    __tablename__ = "ohlcv_cache"
+
+    exchange: Mapped[str] = mapped_column(
+        String(50),
+        primary_key=True,
+        nullable=False,
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(20),
+        primary_key=True,
+        nullable=False,
+    )
+    timeframe: Mapped[str] = mapped_column(
+        String(10),
+        primary_key=True,
+        nullable=False,
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        primary_key=True,
+        nullable=False,
+    )
+    open: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    high: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    low: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    close: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+    volume: Mapped[Decimal] = mapped_column(
+        Numeric(20, 8),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        {
+            "info": {"timescaledb_hypertable": {"time_column": "timestamp"}},
+            "extend_existing": True,
+        },
+    )
+
+
+class Report(Base):
+    """Generated bot performance report."""
+
+    __tablename__ = "reports"
+    __table_args__ = {"extend_existing": True}
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    bot_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("bots.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    period: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+    start_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    end_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    metrics: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("NOW()"),
+    )

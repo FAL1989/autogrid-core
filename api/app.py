@@ -5,16 +5,19 @@ Provides the core API without optional cloud routes.
 """
 
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from api.core.config import get_settings
 from api.core.database import close_db, engine
-from api.core.rate_limiter import close_redis, init_redis
+from api.core.middleware import SecurityHeadersMiddleware
+from api.core.rate_limiter import _redis_client, close_redis, init_redis
 from api.routes import auth, backtest, bots, credentials, orders, portfolio, reports, ws
 
 logger = logging.getLogger(__name__)
@@ -67,6 +70,11 @@ def create_app() -> FastAPI:
 
     settings = get_settings()
     cors_origins = [origin.strip() for origin in settings.cors_origins.split(",")]
+
+    # Add security headers middleware (runs first, wraps all responses)
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    # CORS middleware
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
@@ -95,11 +103,119 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/health", tags=["Health"])
-    async def health_check() -> dict[str, str]:
-        return {"status": "healthy"}
+    async def health_check() -> JSONResponse:
+        """
+        Comprehensive health check endpoint.
+
+        Validates database and Redis connectivity.
+        Returns component-level status and overall health.
+        """
+        checks: dict[str, dict] = {}
+        overall_status = "healthy"
+
+        # Check database
+        db_start = time.time()
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text("SELECT 1"))
+            db_latency_ms = round((time.time() - db_start) * 1000, 2)
+            checks["database"] = {
+                "status": "ok",
+                "latency_ms": db_latency_ms,
+            }
+        except Exception as exc:
+            logger.error(f"Database health check failed: {exc}")
+            checks["database"] = {
+                "status": "error",
+                "error": str(exc),
+            }
+            overall_status = "degraded"
+
+        # Check Redis
+        redis_start = time.time()
+        try:
+            if _redis_client is not None:
+                await _redis_client.ping()
+                redis_latency_ms = round((time.time() - redis_start) * 1000, 2)
+                # Get memory info if available
+                try:
+                    info = await _redis_client.info("memory")
+                    used_memory = info.get("used_memory_human", "unknown")
+                except Exception:
+                    used_memory = "unknown"
+                checks["redis"] = {
+                    "status": "ok",
+                    "latency_ms": redis_latency_ms,
+                    "used_memory": used_memory,
+                }
+            else:
+                checks["redis"] = {
+                    "status": "not_initialized",
+                }
+                # Redis not being initialized is a warning, not critical
+                if overall_status == "healthy":
+                    overall_status = "healthy"  # Redis is optional for basic health
+        except Exception as exc:
+            logger.warning(f"Redis health check failed: {exc}")
+            checks["redis"] = {
+                "status": "error",
+                "error": str(exc),
+            }
+            # Redis failure degrades status but doesn't make it unhealthy
+            if overall_status == "healthy":
+                overall_status = "degraded"
+
+        status_code = (
+            status.HTTP_200_OK
+            if overall_status == "healthy"
+            else status.HTTP_503_SERVICE_UNAVAILABLE
+            if checks.get("database", {}).get("status") == "error"
+            else status.HTTP_200_OK
+        )
+
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "status": overall_status,
+                "checks": checks,
+            },
+        )
+
+    @app.get("/ready", tags=["Health"])
+    async def readiness_check() -> JSONResponse:
+        """
+        Kubernetes readiness probe endpoint.
+
+        Returns 200 if the service is ready to accept traffic.
+        Checks database connectivity only (critical dependency).
+        """
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text("SELECT 1"))
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={"ready": True},
+            )
+        except Exception as exc:
+            logger.error(f"Readiness check failed: {exc}")
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"ready": False, "error": str(exc)},
+            )
+
+    @app.get("/live", tags=["Health"])
+    async def liveness_check() -> dict[str, str]:
+        """
+        Kubernetes liveness probe endpoint.
+
+        Returns 200 if the process is alive.
+        Minimal check - just confirms the API is responding.
+        """
+        return {"alive": True}
 
     @app.get("/api/v1/health", tags=["Health"])
-    async def health_check_v1() -> dict[str, str]:
-        return {"status": "healthy"}
+    async def health_check_v1() -> JSONResponse:
+        """Versioned health check - same as /health."""
+        return await health_check()
 
     return app

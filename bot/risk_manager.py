@@ -142,7 +142,7 @@ class RiskManager:
         self._update_windows(state, equity_total, now)
 
         decision = await self._apply_existing_pauses(state, equity_total, now)
-        if decision.action != RiskAction.NONE:
+        if decision.action != RiskAction.NONE or decision.status != RiskStatus.OK:
             await self._commit_state(state, decision)
             self._last_decision = decision
             return decision
@@ -390,10 +390,11 @@ class RiskManager:
             state.reference_price = current_price
             return
 
-        if state.reinforcements_used >= len(self.config.reinforcement_levels_percent):
+        reinforcements_used = state.reinforcements_used or 0
+        if reinforcements_used >= len(self.config.reinforcement_levels_percent):
             return
 
-        level_index = state.reinforcements_used
+        level_index = reinforcements_used
         level_percent = self.config.reinforcement_levels_percent[level_index]
         trigger_price = state.reference_price * (
             Decimal("1") - (level_percent / Decimal("100"))

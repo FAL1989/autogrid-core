@@ -2040,20 +2040,253 @@ def sync_market_data(self) -> dict:
     - Fetch latest candles for active trading pairs
     - Store in TimescaleDB for backtesting
     """
-    # TODO: Implement market data sync
-    return {"status": "ok", "pairs_synced": 0}
+    logger.info("Starting market data sync")
+    try:
+        result = _run_async(_sync_market_data_async())
+        return result
+    except Exception as e:
+        logger.error(f"Market data sync failed: {e}")
+        raise self.retry(exc=e, countdown=60)
+
+
+async def _sync_market_data_async() -> dict:
+    """Async implementation of market data sync."""
+    import ccxt.async_support as ccxt
+    from sqlalchemy import select
+    from sqlalchemy.dialects.postgresql import insert
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+
+    from api.core.config import get_settings
+    from api.models.orm import Bot, OHLCVCache
+
+    settings = get_settings()
+    engine = create_async_engine(settings.async_database_url)
+    async_session = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    pairs_synced = 0
+    candles_stored = 0
+    errors: list[str] = []
+    timeframes = ["1h", "4h", "1d"]
+
+    async with async_session() as db:
+        # Get active bots (running or recently active)
+        stmt = select(Bot).where(Bot.status.in_(["running", "paused"]))
+        result = await db.execute(stmt)
+        bots = result.scalars().all()
+
+        # Group by exchange and symbol
+        exchange_pairs: dict[str, set[str]] = {}
+        for bot in bots:
+            exchange = bot.exchange.lower()
+            if exchange not in exchange_pairs:
+                exchange_pairs[exchange] = set()
+            exchange_pairs[exchange].add(bot.symbol)
+
+        # Fetch OHLCV for each exchange
+        for exchange_id, symbols in exchange_pairs.items():
+            exchange_class = getattr(ccxt, exchange_id, None)
+            if not exchange_class:
+                errors.append(f"Unknown exchange: {exchange_id}")
+                continue
+
+            exchange = exchange_class({"enableRateLimit": True})
+            try:
+                for symbol in symbols:
+                    for timeframe in timeframes:
+                        try:
+                            ohlcv = await exchange.fetch_ohlcv(
+                                symbol, timeframe, limit=100
+                            )
+                            if not ohlcv:
+                                continue
+
+                            # Prepare rows for upsert
+                            rows = []
+                            for ts, o, h, l, c, v in ohlcv:
+                                rows.append({
+                                    "exchange": exchange_id,
+                                    "symbol": symbol,
+                                    "timeframe": timeframe,
+                                    "timestamp": datetime.fromtimestamp(
+                                        ts / 1000, tz=timezone.utc
+                                    ),
+                                    "open": Decimal(str(o)),
+                                    "high": Decimal(str(h)),
+                                    "low": Decimal(str(l)),
+                                    "close": Decimal(str(c)),
+                                    "volume": Decimal(str(v)),
+                                })
+
+                            # Upsert rows
+                            if rows:
+                                stmt = insert(OHLCVCache).values(rows)
+                                stmt = stmt.on_conflict_do_update(
+                                    index_elements=[
+                                        "exchange", "symbol", "timeframe", "timestamp"
+                                    ],
+                                    set_={
+                                        "open": stmt.excluded.open,
+                                        "high": stmt.excluded.high,
+                                        "low": stmt.excluded.low,
+                                        "close": stmt.excluded.close,
+                                        "volume": stmt.excluded.volume,
+                                    },
+                                )
+                                await db.execute(stmt)
+                                candles_stored += len(rows)
+
+                            pairs_synced += 1
+                        except Exception as e:
+                            errors.append(f"{exchange_id}/{symbol}/{timeframe}: {e}")
+
+                await db.commit()
+            finally:
+                await exchange.close()
+
+    await engine.dispose()
+
+    logger.info(
+        f"Market data sync complete: {pairs_synced} pairs, "
+        f"{candles_stored} candles, {len(errors)} errors"
+    )
+    return {
+        "status": "ok" if not errors else "partial",
+        "pairs_synced": pairs_synced,
+        "candles_stored": candles_stored,
+        "errors": errors[:10] if errors else [],
+    }
 
 
 @celery_app.task(bind=True)
-def cleanup_old_data(self) -> dict:
+def cleanup_old_data(self, retention_days: int = 90) -> dict:
     """
     Clean up old data based on retention policy.
 
     - Remove old trades beyond retention period
-    - Compress old OHLCV data
+    - Delete old OHLCV cache data
+
+    Args:
+        retention_days: Days to keep data (default 90)
     """
-    # TODO: Implement data cleanup
-    return {"status": "ok", "records_cleaned": 0}
+    logger.info(f"Starting data cleanup (retention: {retention_days} days)")
+    try:
+        result = _run_async(_cleanup_old_data_async(retention_days))
+        return result
+    except Exception as e:
+        logger.error(f"Data cleanup failed: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+async def _cleanup_old_data_async(retention_days: int) -> dict:
+    """Async implementation of data cleanup."""
+    from sqlalchemy import delete, func, select, text
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+
+    from api.core.config import get_settings
+    from api.models.orm import OHLCVCache, Trade, User
+
+    settings = get_settings()
+    engine = create_async_engine(settings.async_database_url)
+    async_session = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    trades_deleted = 0
+    ohlcv_deleted = 0
+    errors: list[str] = []
+
+    # Define retention by plan
+    plan_retention: dict[str, int] = {
+        "free": 30,
+        "starter": 90,
+        "pro": 180,
+        "enterprise": 365,
+    }
+
+    async with async_session() as db:
+        # Get all users with their plans
+        stmt = select(User.id, User.plan)
+        result = await db.execute(stmt)
+        users = result.all()
+
+        # Delete old trades per user plan
+        for user_id, plan in users:
+            user_retention = plan_retention.get(plan, 90)
+            user_cutoff = datetime.now(timezone.utc) - timedelta(days=user_retention)
+
+            try:
+                # Count and delete old trades for this user's bots
+                count_stmt = text("""
+                    SELECT COUNT(*) FROM trades t
+                    JOIN bots b ON t.bot_id = b.id
+                    WHERE b.user_id = :user_id AND t.timestamp < :cutoff
+                """)
+                count_result = await db.execute(
+                    count_stmt, {"user_id": user_id, "cutoff": user_cutoff}
+                )
+                count = count_result.scalar() or 0
+
+                if count > 0:
+                    delete_stmt = text("""
+                        DELETE FROM trades t
+                        USING bots b
+                        WHERE t.bot_id = b.id
+                        AND b.user_id = :user_id
+                        AND t.timestamp < :cutoff
+                    """)
+                    await db.execute(
+                        delete_stmt, {"user_id": user_id, "cutoff": user_cutoff}
+                    )
+                    trades_deleted += count
+            except Exception as e:
+                errors.append(f"User {user_id}: {e}")
+
+        # Delete old OHLCV cache data (global retention)
+        try:
+            stmt = delete(OHLCVCache).where(OHLCVCache.timestamp < cutoff_date)
+            result = await db.execute(stmt)
+            ohlcv_deleted = result.rowcount or 0
+        except Exception as e:
+            errors.append(f"OHLCV cleanup: {e}")
+
+        await db.commit()
+
+        # Run VACUUM ANALYZE on affected tables (in a separate transaction)
+        try:
+            # Note: VACUUM cannot run inside a transaction
+            await db.execute(text("ANALYZE trades"))
+            await db.execute(text("ANALYZE ohlcv_cache"))
+        except Exception as e:
+            logger.warning(f"ANALYZE failed: {e}")
+
+    await engine.dispose()
+
+    logger.info(
+        f"Data cleanup complete: {trades_deleted} trades deleted, "
+        f"{ohlcv_deleted} OHLCV records deleted"
+    )
+    return {
+        "status": "ok" if not errors else "partial",
+        "records_cleaned": trades_deleted + ohlcv_deleted,
+        "trades_deleted": trades_deleted,
+        "ohlcv_deleted": ohlcv_deleted,
+        "errors": errors[:10] if errors else [],
+    }
 
 
 # =============================================================================
@@ -2462,15 +2695,173 @@ async def _dca_save_strategy_state_async() -> dict:
 
 
 @celery_app.task(bind=True)
-def generate_bot_report(self, bot_id: str) -> dict:
+def generate_bot_report(self, bot_id: str, period: str = "30d") -> dict:
     """
     Generate performance report for a bot.
 
     Args:
         bot_id: The bot to generate report for
+        period: Report period (7d, 30d, 90d, all)
     """
-    # TODO: Implement report generation
-    return {"status": "ok", "bot_id": bot_id, "report": {}}
+    logger.info(f"Generating report for bot {bot_id}, period: {period}")
+    try:
+        result = _run_async(_generate_bot_report_async(bot_id, period))
+        return result
+    except Exception as e:
+        logger.error(f"Report generation failed for bot {bot_id}: {e}")
+        return {"status": "error", "bot_id": bot_id, "error": str(e)}
+
+
+async def _generate_bot_report_async(bot_id: str, period: str) -> dict:
+    """Async implementation of report generation."""
+    from sqlalchemy import func, select
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+
+    from api.core.config import get_settings
+    from api.models.orm import Bot, Report, Trade
+
+    settings = get_settings()
+    engine = create_async_engine(settings.async_database_url)
+    async_session = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    # Parse period to days
+    period_days = {
+        "7d": 7,
+        "30d": 30,
+        "90d": 90,
+        "all": 365 * 10,  # Effectively all data
+    }.get(period, 30)
+
+    end_date = datetime.now(timezone.utc)
+    start_date = end_date - timedelta(days=period_days)
+
+    async with async_session() as db:
+        # Get bot info
+        stmt = select(Bot).where(Bot.id == UUID(bot_id))
+        result = await db.execute(stmt)
+        bot = result.scalar_one_or_none()
+
+        if not bot:
+            return {"status": "error", "bot_id": bot_id, "error": "Bot not found"}
+
+        # Get trades in period
+        stmt = (
+            select(Trade)
+            .where(Trade.bot_id == UUID(bot_id))
+            .where(Trade.timestamp >= start_date)
+            .where(Trade.timestamp <= end_date)
+            .order_by(Trade.timestamp)
+        )
+        result = await db.execute(stmt)
+        trades = result.scalars().all()
+
+        # Calculate metrics
+        total_trades = len(trades)
+        buy_trades = [t for t in trades if t.side == "buy"]
+        sell_trades = [t for t in trades if t.side == "sell"]
+
+        total_volume = sum(t.price * t.quantity for t in trades)
+        total_fees = sum(t.fee or Decimal("0") for t in trades)
+        realized_pnl = sum(t.realized_pnl or Decimal("0") for t in trades)
+
+        # Calculate win rate (trades with positive PnL)
+        winning_trades = [t for t in trades if (t.realized_pnl or 0) > 0]
+        losing_trades = [t for t in trades if (t.realized_pnl or 0) < 0]
+        win_rate = (
+            len(winning_trades) / len(sell_trades) * 100
+            if sell_trades
+            else 0.0
+        )
+
+        # Calculate average trade
+        avg_trade_pnl = (
+            float(realized_pnl) / len(sell_trades)
+            if sell_trades
+            else 0.0
+        )
+
+        # Calculate max drawdown from equity curve
+        equity = float(bot.config.get("investment", 1000))
+        peak = equity
+        max_drawdown = 0.0
+        equity_curve: list[dict] = []
+
+        for trade in trades:
+            if trade.realized_pnl:
+                equity += float(trade.realized_pnl)
+            equity_curve.append({
+                "timestamp": trade.timestamp.isoformat(),
+                "equity": equity,
+            })
+            if equity > peak:
+                peak = equity
+            drawdown = (peak - equity) / peak * 100 if peak > 0 else 0
+            if drawdown > max_drawdown:
+                max_drawdown = drawdown
+
+        # Calculate Sharpe ratio (simplified)
+        if len(sell_trades) > 1:
+            returns = [float(t.realized_pnl or 0) for t in sell_trades]
+            avg_return = sum(returns) / len(returns)
+            std_return = (
+                sum((r - avg_return) ** 2 for r in returns) / len(returns)
+            ) ** 0.5
+            sharpe_ratio = (
+                avg_return / std_return * (252 ** 0.5)
+                if std_return > 0
+                else 0.0
+            )
+        else:
+            sharpe_ratio = 0.0
+
+        # Build metrics dict
+        metrics = {
+            "total_trades": total_trades,
+            "buy_trades": len(buy_trades),
+            "sell_trades": len(sell_trades),
+            "winning_trades": len(winning_trades),
+            "losing_trades": len(losing_trades),
+            "win_rate": round(win_rate, 2),
+            "total_volume": str(total_volume),
+            "total_fees": str(total_fees),
+            "realized_pnl": str(realized_pnl),
+            "avg_trade_pnl": round(avg_trade_pnl, 2),
+            "max_drawdown": round(max_drawdown, 2),
+            "sharpe_ratio": round(sharpe_ratio, 2),
+            "equity_curve_points": len(equity_curve),
+            "final_equity": equity_curve[-1]["equity"] if equity_curve else equity,
+        }
+
+        # Save report to database
+        report = Report(
+            bot_id=UUID(bot_id),
+            user_id=bot.user_id,
+            period=period,
+            start_date=start_date,
+            end_date=end_date,
+            metrics=metrics,
+        )
+        db.add(report)
+        await db.commit()
+        await db.refresh(report)
+
+    await engine.dispose()
+
+    logger.info(f"Report generated for bot {bot_id}: {total_trades} trades analyzed")
+    return {
+        "status": "ok",
+        "bot_id": bot_id,
+        "report_id": str(report.id),
+        "report": metrics,
+    }
 
 
 # =============================================================================
@@ -2481,32 +2872,188 @@ def generate_bot_report(self, bot_id: str) -> dict:
 @celery_app.task(bind=True)
 def run_backtest(
     self,
+    backtest_id: str,
+    user_id: str,
     strategy: str,
     symbol: str,
     timeframe: str,
     start_date: str,
     end_date: str,
     config: dict,
+    exchange_id: str = "binance",
 ) -> dict:
     """
     Run a backtest asynchronously.
 
     Args:
+        backtest_id: ID of backtest record to update
+        user_id: User who owns this backtest
         strategy: Strategy type (grid/dca)
         symbol: Trading pair
         timeframe: Candle timeframe
-        start_date: Backtest start date
-        end_date: Backtest end date
+        start_date: Backtest start date (ISO format)
+        end_date: Backtest end date (ISO format)
         config: Strategy configuration
+        exchange_id: Exchange to fetch data from
     """
-    # TODO: Implement backtest execution
-    return {
-        "status": "completed",
-        "total_trades": 0,
-        "total_pnl": 0.0,
-        "sharpe_ratio": 0.0,
-        "max_drawdown": 0.0,
-    }
+    logger.info(
+        f"Running backtest {backtest_id}: {strategy} on {symbol} "
+        f"({start_date} to {end_date})"
+    )
+    try:
+        result = _run_async(
+            _run_backtest_async(
+                backtest_id=backtest_id,
+                user_id=user_id,
+                strategy=strategy,
+                symbol=symbol,
+                timeframe=timeframe,
+                start_date=start_date,
+                end_date=end_date,
+                config=config,
+                exchange_id=exchange_id,
+            )
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Backtest {backtest_id} failed: {e}")
+        # Update backtest status to failed
+        _run_async(_update_backtest_status(backtest_id, "failed", str(e)))
+        return {
+            "status": "failed",
+            "backtest_id": backtest_id,
+            "error": str(e),
+        }
+
+
+async def _run_backtest_async(
+    backtest_id: str,
+    user_id: str,
+    strategy: str,
+    symbol: str,
+    timeframe: str,
+    start_date: str,
+    end_date: str,
+    config: dict,
+    exchange_id: str,
+) -> dict:
+    """Async implementation of backtest execution."""
+    from sqlalchemy import select, update
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+
+    from api.core.config import get_settings
+    from api.models.orm import Backtest
+    from api.services.backtest_service import BacktestService
+
+    settings = get_settings()
+    engine = create_async_engine(settings.async_database_url)
+    async_session = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    async with async_session() as db:
+        # Update status to running
+        stmt = (
+            update(Backtest)
+            .where(Backtest.id == UUID(backtest_id))
+            .values(status="running")
+        )
+        await db.execute(stmt)
+        await db.commit()
+
+        # Use the existing BacktestService
+        service = BacktestService(db)
+
+        try:
+            # Parse dates
+            start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+            end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+
+            # Run backtest - this fetches OHLCV and simulates strategy
+            backtest = await service.run_and_store(
+                user_id=UUID(user_id),
+                strategy=strategy,
+                symbol=symbol,
+                timeframe=timeframe,
+                start_date=start_dt,
+                end_date=end_dt,
+                config=config,
+                exchange_id=exchange_id,
+            )
+
+            # Extract results
+            results = backtest.results or {}
+
+            await engine.dispose()
+
+            logger.info(f"Backtest {backtest_id} completed successfully")
+            return {
+                "status": "completed",
+                "backtest_id": str(backtest.id),
+                "total_trades": results.get("total_trades", 0),
+                "total_pnl": results.get("total_pnl", 0.0),
+                "sharpe_ratio": results.get("sharpe_ratio", 0.0),
+                "max_drawdown": results.get("max_drawdown", 0.0),
+                "win_rate": results.get("win_rate", 0.0),
+            }
+
+        except Exception as e:
+            # Update backtest status to failed
+            stmt = (
+                update(Backtest)
+                .where(Backtest.id == UUID(backtest_id))
+                .values(
+                    status="failed",
+                    results={"error": str(e)},
+                )
+            )
+            await db.execute(stmt)
+            await db.commit()
+            raise
+
+
+async def _update_backtest_status(
+    backtest_id: str, status: str, error: str | None = None
+) -> None:
+    """Update backtest status in database."""
+    from sqlalchemy import update
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+
+    from api.core.config import get_settings
+    from api.models.orm import Backtest
+
+    settings = get_settings()
+    engine = create_async_engine(settings.async_database_url)
+    async_session = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    async with async_session() as db:
+        values: dict = {"status": status}
+        if error:
+            values["results"] = {"error": error}
+
+        stmt = (
+            update(Backtest)
+            .where(Backtest.id == UUID(backtest_id))
+            .values(**values)
+        )
+        await db.execute(stmt)
+        await db.commit()
+
+    await engine.dispose()
 
 
 async def _update_bot_status(
