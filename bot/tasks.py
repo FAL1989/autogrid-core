@@ -9,7 +9,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from celery import Celery
@@ -2129,8 +2129,8 @@ async def _sync_market_data_async() -> dict:
 
                             # Upsert rows
                             if rows:
-                                stmt = insert(OHLCVCache).values(rows)
-                                stmt = stmt.on_conflict_do_update(
+                                insert_stmt = insert(OHLCVCache).values(rows)
+                                insert_stmt = insert_stmt.on_conflict_do_update(
                                     index_elements=[
                                         "exchange",
                                         "symbol",
@@ -2138,14 +2138,14 @@ async def _sync_market_data_async() -> dict:
                                         "timestamp",
                                     ],
                                     set_={
-                                        "open": stmt.excluded.open,
-                                        "high": stmt.excluded.high,
-                                        "low": stmt.excluded.low,
-                                        "close": stmt.excluded.close,
-                                        "volume": stmt.excluded.volume,
+                                        "open": insert_stmt.excluded.open,
+                                        "high": insert_stmt.excluded.high,
+                                        "low": insert_stmt.excluded.low,
+                                        "close": insert_stmt.excluded.close,
+                                        "volume": insert_stmt.excluded.volume,
                                     },
                                 )
-                                await db.execute(stmt)
+                                await db.execute(insert_stmt)
                                 candles_stored += len(rows)
 
                             pairs_synced += 1
@@ -2263,9 +2263,12 @@ async def _cleanup_old_data_async(retention_days: int) -> dict:
 
         # Delete old OHLCV cache data (global retention)
         try:
-            stmt = delete(OHLCVCache).where(OHLCVCache.timestamp < cutoff_date)
-            result = await db.execute(stmt)
-            ohlcv_deleted = result.rowcount or 0
+            ohlcv_delete_stmt = delete(OHLCVCache).where(
+                OHLCVCache.timestamp < cutoff_date
+            )
+            ohlcv_delete_result = await db.execute(ohlcv_delete_stmt)
+            # rowcount is available on CursorResult from delete operations
+            ohlcv_deleted = ohlcv_delete_result.rowcount or 0  # type: ignore
         except Exception as e:
             errors.append(f"OHLCV cleanup: {e}")
 
@@ -2750,23 +2753,23 @@ async def _generate_bot_report_async(bot_id: str, period: str) -> dict:
 
     async with async_session() as db:
         # Get bot info
-        stmt = select(Bot).where(Bot.id == UUID(bot_id))
-        result = await db.execute(stmt)
-        bot = result.scalar_one_or_none()
+        bot_stmt = select(Bot).where(Bot.id == UUID(bot_id))
+        bot_result = await db.execute(bot_stmt)
+        bot = bot_result.scalar_one_or_none()
 
         if not bot:
             return {"status": "error", "bot_id": bot_id, "error": "Bot not found"}
 
         # Get trades in period
-        stmt = (
+        trade_stmt = (
             select(Trade)
             .where(Trade.bot_id == UUID(bot_id))
             .where(Trade.timestamp >= start_date)
             .where(Trade.timestamp <= end_date)
             .order_by(Trade.timestamp)
         )
-        result = await db.execute(stmt)
-        trades = result.scalars().all()
+        trade_result = await db.execute(trade_stmt)
+        trades = trade_result.scalars().all()
 
         # Calculate metrics
         total_trades = len(trades)
@@ -2973,9 +2976,14 @@ async def _run_backtest_async(
             end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
 
             # Run backtest - this fetches OHLCV and simulates strategy
+            # Validate strategy is a valid literal type
+            if strategy not in ("grid", "dca"):
+                raise ValueError(f"Invalid strategy: {strategy}")
+            # Cast validated string to Literal type for mypy
+            strategy_literal: Literal["grid", "dca"] = strategy  # type: ignore
             backtest = await service.run_and_store(
                 user_id=UUID(user_id),
-                strategy=strategy,
+                strategy=strategy_literal,
                 symbol=symbol,
                 timeframe=timeframe,
                 start_date=start_dt,

@@ -206,7 +206,7 @@ def create_app() -> FastAPI:
             )
 
     @app.get("/live", tags=["Health"])
-    async def liveness_check() -> dict[str, str]:
+    async def liveness_check() -> dict[str, bool]:
         """
         Kubernetes liveness probe endpoint.
 
