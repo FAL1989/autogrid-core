@@ -20,7 +20,6 @@ from bot.exchange.websocket_manager import (
     BinanceWebSocket,
     BybitWebSocket,
     WebSocketConfig,
-    WebSocketHandler,
     WebSocketManager,
 )
 

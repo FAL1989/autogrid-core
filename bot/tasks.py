@@ -2192,7 +2192,7 @@ def cleanup_old_data(self, retention_days: int = 90) -> dict:
 
 async def _cleanup_old_data_async(retention_days: int) -> dict:
     """Async implementation of data cleanup."""
-    from sqlalchemy import delete, func, select, text
+    from sqlalchemy import delete, select, text
     from sqlalchemy.ext.asyncio import (
         AsyncSession,
         async_sessionmaker,
@@ -2200,7 +2200,7 @@ async def _cleanup_old_data_async(retention_days: int) -> dict:
     )
 
     from api.core.config import get_settings
-    from api.models.orm import OHLCVCache, Trade, User
+    from api.models.orm import OHLCVCache, User
 
     settings = get_settings()
     engine = create_async_engine(settings.async_database_url)
@@ -2719,7 +2719,7 @@ def generate_bot_report(self, bot_id: str, period: str = "30d") -> dict:
 
 async def _generate_bot_report_async(bot_id: str, period: str) -> dict:
     """Async implementation of report generation."""
-    from sqlalchemy import func, select
+    from sqlalchemy import select
     from sqlalchemy.ext.asyncio import (
         AsyncSession,
         async_sessionmaker,
@@ -2935,7 +2935,7 @@ async def _run_backtest_async(
     exchange_id: str,
 ) -> dict:
     """Async implementation of backtest execution."""
-    from sqlalchemy import select, update
+    from sqlalchemy import update
     from sqlalchemy.ext.asyncio import (
         AsyncSession,
         async_sessionmaker,

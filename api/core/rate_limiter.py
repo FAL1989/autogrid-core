@@ -11,8 +11,7 @@ Supports:
 """
 
 from enum import Enum
-from typing import Annotated, Callable
-from uuid import UUID
+from typing import Annotated
 
 import redis.asyncio as redis
 from fastapi import Depends, HTTPException, Request, status
@@ -210,7 +209,10 @@ class RateLimitByUser:
             ...
 
         # Or with tier:
-        @router.get("/trades", dependencies=[Depends(RateLimitByUser.for_tier(RateLimitTier.TRADES))])
+        @router.get(
+            "/trades",
+            dependencies=[Depends(RateLimitByUser.for_tier(RateLimitTier.TRADES))]
+        )
         async def get_trades(...):
             ...
     """
