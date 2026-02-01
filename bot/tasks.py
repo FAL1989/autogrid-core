@@ -2111,26 +2111,31 @@ async def _sync_market_data_async() -> dict:
                             # Prepare rows for upsert
                             rows = []
                             for ts, o, h, l, c, v in ohlcv:
-                                rows.append({
-                                    "exchange": exchange_id,
-                                    "symbol": symbol,
-                                    "timeframe": timeframe,
-                                    "timestamp": datetime.fromtimestamp(
-                                        ts / 1000, tz=timezone.utc
-                                    ),
-                                    "open": Decimal(str(o)),
-                                    "high": Decimal(str(h)),
-                                    "low": Decimal(str(l)),
-                                    "close": Decimal(str(c)),
-                                    "volume": Decimal(str(v)),
-                                })
+                                rows.append(
+                                    {
+                                        "exchange": exchange_id,
+                                        "symbol": symbol,
+                                        "timeframe": timeframe,
+                                        "timestamp": datetime.fromtimestamp(
+                                            ts / 1000, tz=timezone.utc
+                                        ),
+                                        "open": Decimal(str(o)),
+                                        "high": Decimal(str(h)),
+                                        "low": Decimal(str(l)),
+                                        "close": Decimal(str(c)),
+                                        "volume": Decimal(str(v)),
+                                    }
+                                )
 
                             # Upsert rows
                             if rows:
                                 stmt = insert(OHLCVCache).values(rows)
                                 stmt = stmt.on_conflict_do_update(
                                     index_elements=[
-                                        "exchange", "symbol", "timeframe", "timestamp"
+                                        "exchange",
+                                        "symbol",
+                                        "timeframe",
+                                        "timestamp",
                                     ],
                                     set_={
                                         "open": stmt.excluded.open,
@@ -2231,24 +2236,28 @@ async def _cleanup_old_data_async(retention_days: int) -> dict:
 
             try:
                 # Count and delete old trades for this user's bots
-                count_stmt = text("""
+                count_stmt = text(
+                    """
                     SELECT COUNT(*) FROM trades t
                     JOIN bots b ON t.bot_id = b.id
                     WHERE b.user_id = :user_id AND t.timestamp < :cutoff
-                """)
+                """
+                )
                 count_result = await db.execute(
                     count_stmt, {"user_id": user_id, "cutoff": user_cutoff}
                 )
                 count = count_result.scalar() or 0
 
                 if count > 0:
-                    delete_stmt = text("""
+                    delete_stmt = text(
+                        """
                         DELETE FROM trades t
                         USING bots b
                         WHERE t.bot_id = b.id
                         AND b.user_id = :user_id
                         AND t.timestamp < :cutoff
-                    """)
+                    """
+                    )
                     await db.execute(
                         delete_stmt, {"user_id": user_id, "cutoff": user_cutoff}
                     )
@@ -2775,18 +2784,10 @@ async def _generate_bot_report_async(bot_id: str, period: str) -> dict:
         # Calculate win rate (trades with positive PnL)
         winning_trades = [t for t in trades if (t.realized_pnl or 0) > 0]
         losing_trades = [t for t in trades if (t.realized_pnl or 0) < 0]
-        win_rate = (
-            len(winning_trades) / len(sell_trades) * 100
-            if sell_trades
-            else 0.0
-        )
+        win_rate = len(winning_trades) / len(sell_trades) * 100 if sell_trades else 0.0
 
         # Calculate average trade
-        avg_trade_pnl = (
-            float(realized_pnl) / len(sell_trades)
-            if sell_trades
-            else 0.0
-        )
+        avg_trade_pnl = float(realized_pnl) / len(sell_trades) if sell_trades else 0.0
 
         # Calculate max drawdown from equity curve
         equity = float(bot.config.get("investment", 1000))
@@ -2797,10 +2798,12 @@ async def _generate_bot_report_async(bot_id: str, period: str) -> dict:
         for trade in trades:
             if trade.realized_pnl:
                 equity += float(trade.realized_pnl)
-            equity_curve.append({
-                "timestamp": trade.timestamp.isoformat(),
-                "equity": equity,
-            })
+            equity_curve.append(
+                {
+                    "timestamp": trade.timestamp.isoformat(),
+                    "equity": equity,
+                }
+            )
             if equity > peak:
                 peak = equity
             drawdown = (peak - equity) / peak * 100 if peak > 0 else 0
@@ -2815,9 +2818,7 @@ async def _generate_bot_report_async(bot_id: str, period: str) -> dict:
                 sum((r - avg_return) ** 2 for r in returns) / len(returns)
             ) ** 0.5
             sharpe_ratio = (
-                avg_return / std_return * (252 ** 0.5)
-                if std_return > 0
-                else 0.0
+                avg_return / std_return * (252**0.5) if std_return > 0 else 0.0
             )
         else:
             sharpe_ratio = 0.0
@@ -3045,11 +3046,7 @@ async def _update_backtest_status(
         if error:
             values["results"] = {"error": error}
 
-        stmt = (
-            update(Backtest)
-            .where(Backtest.id == UUID(backtest_id))
-            .values(**values)
-        )
+        stmt = update(Backtest).where(Backtest.id == UUID(backtest_id)).values(**values)
         await db.execute(stmt)
         await db.commit()
 

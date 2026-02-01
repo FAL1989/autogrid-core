@@ -92,9 +92,7 @@ class TestBinanceWebSocket:
         # Create proper async context manager mock for POST response
         mock_response = MagicMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(
-            return_value={"listenKey": "test_listen_key"}
-        )
+        mock_response.json = AsyncMock(return_value={"listenKey": "test_listen_key"})
 
         # Create async context manager for session.post
         mock_post_ctx = MagicMock()
@@ -134,9 +132,7 @@ class TestBinanceWebSocket:
             with pytest.raises(RuntimeError, match="Failed to get Binance listen key"):
                 await binance_ws.connect()
 
-    def test_parse_message_execution_report(
-        self, binance_ws: BinanceWebSocket
-    ) -> None:
+    def test_parse_message_execution_report(self, binance_ws: BinanceWebSocket) -> None:
         """Should parse executionReport message correctly."""
         message = {
             "e": "executionReport",
@@ -168,9 +164,7 @@ class TestBinanceWebSocket:
         assert payload["side"] == "buy"
         assert payload["status"] == "filled"
 
-    def test_parse_message_balance_update(
-        self, binance_ws: BinanceWebSocket
-    ) -> None:
+    def test_parse_message_balance_update(self, binance_ws: BinanceWebSocket) -> None:
         """Should parse outboundAccountPosition message correctly."""
         message = {
             "e": "outboundAccountPosition",
@@ -189,9 +183,7 @@ class TestBinanceWebSocket:
         assert payload["exchange"] == "binance"
         assert len(payload["balances"]) == 2
 
-    def test_parse_message_unknown_event(
-        self, binance_ws: BinanceWebSocket
-    ) -> None:
+    def test_parse_message_unknown_event(self, binance_ws: BinanceWebSocket) -> None:
         """Should return None for unknown event types."""
         message = {"e": "unknown_event", "data": {}}
 
@@ -270,9 +262,7 @@ class TestBybitWebSocket:
         ws = BybitWebSocket(config)
         assert ws.ws_url == "wss://stream-testnet.bybit.com/v5/private"
 
-    def test_parse_message_order_update(
-        self, bybit_ws: BybitWebSocket
-    ) -> None:
+    def test_parse_message_order_update(self, bybit_ws: BybitWebSocket) -> None:
         """Should parse order topic message correctly."""
         message = {
             "topic": "order",
@@ -303,9 +293,7 @@ class TestBybitWebSocket:
         assert payload["side"] == "buy"
         assert payload["status"] == "filled"
 
-    def test_parse_message_execution(
-        self, bybit_ws: BybitWebSocket
-    ) -> None:
+    def test_parse_message_execution(self, bybit_ws: BybitWebSocket) -> None:
         """Should parse execution topic message correctly."""
         message = {
             "topic": "execution",
@@ -361,36 +349,28 @@ class TestWebSocketHandler:
         """Create a concrete handler for testing base class."""
         return BinanceWebSocket(config)
 
-    def test_register_order_update_callback(
-        self, handler: BinanceWebSocket
-    ) -> None:
+    def test_register_order_update_callback(self, handler: BinanceWebSocket) -> None:
         """Should register order update callback."""
         callback = MagicMock()
         handler.on_order_update(callback)
 
         assert callback in handler._callbacks["order_update"]
 
-    def test_register_execution_callback(
-        self, handler: BinanceWebSocket
-    ) -> None:
+    def test_register_execution_callback(self, handler: BinanceWebSocket) -> None:
         """Should register execution callback."""
         callback = MagicMock()
         handler.on_execution(callback)
 
         assert callback in handler._callbacks["execution"]
 
-    def test_register_balance_update_callback(
-        self, handler: BinanceWebSocket
-    ) -> None:
+    def test_register_balance_update_callback(self, handler: BinanceWebSocket) -> None:
         """Should register balance update callback."""
         callback = MagicMock()
         handler.on_balance_update(callback)
 
         assert callback in handler._callbacks["balance_update"]
 
-    async def test_dispatch_calls_callbacks(
-        self, handler: BinanceWebSocket
-    ) -> None:
+    async def test_dispatch_calls_callbacks(self, handler: BinanceWebSocket) -> None:
         """Should dispatch event to registered callbacks."""
         callback1 = MagicMock()
         callback2 = AsyncMock()
@@ -419,9 +399,7 @@ class TestWebSocketHandler:
         # Second callback should still be called
         callback2.assert_called_once_with(payload)
 
-    async def test_reconnect_with_backoff(
-        self, handler: BinanceWebSocket
-    ) -> None:
+    async def test_reconnect_with_backoff(self, handler: BinanceWebSocket) -> None:
         """Should reconnect with exponential backoff."""
         handler._running = True
         handler._reconnect_count = 0
@@ -460,9 +438,7 @@ class TestWebSocketManager:
         """Create WebSocket manager."""
         return WebSocketManager()
 
-    async def test_manager_connect_binance(
-        self, manager: WebSocketManager
-    ) -> None:
+    async def test_manager_connect_binance(self, manager: WebSocketManager) -> None:
         """Should connect to Binance WebSocket."""
         mock_handler = MagicMock()
         mock_handler.connect = AsyncMock()
@@ -473,9 +449,7 @@ class TestWebSocketManager:
             return_value=mock_handler,
         ):
             with patch("api.core.config.get_settings") as mock_settings:
-                mock_settings.return_value = MagicMock(
-                    exchange_rest_timeout_seconds=10
-                )
+                mock_settings.return_value = MagicMock(exchange_rest_timeout_seconds=10)
                 await manager.connect(
                     exchange_id="binance",
                     api_key="test_key",
@@ -487,9 +461,7 @@ class TestWebSocketManager:
         mock_handler.connect.assert_called_once()
         mock_handler.subscribe_user_data.assert_called_once()
 
-    async def test_manager_connect_bybit(
-        self, manager: WebSocketManager
-    ) -> None:
+    async def test_manager_connect_bybit(self, manager: WebSocketManager) -> None:
         """Should connect to Bybit WebSocket."""
         mock_handler = MagicMock()
         mock_handler.connect = AsyncMock()
@@ -500,9 +472,7 @@ class TestWebSocketManager:
             return_value=mock_handler,
         ):
             with patch("api.core.config.get_settings") as mock_settings:
-                mock_settings.return_value = MagicMock(
-                    exchange_rest_timeout_seconds=10
-                )
+                mock_settings.return_value = MagicMock(exchange_rest_timeout_seconds=10)
                 await manager.connect(
                     exchange_id="bybit",
                     api_key="test_key",
@@ -516,9 +486,7 @@ class TestWebSocketManager:
     ) -> None:
         """Should log warning for unsupported exchange."""
         with patch("api.core.config.get_settings") as mock_settings:
-            mock_settings.return_value = MagicMock(
-                exchange_rest_timeout_seconds=10
-            )
+            mock_settings.return_value = MagicMock(exchange_rest_timeout_seconds=10)
             await manager.connect(
                 exchange_id="unknown_exchange",
                 api_key="test_key",
@@ -527,9 +495,7 @@ class TestWebSocketManager:
 
         assert "unknown_exchange" not in manager._handlers
 
-    async def test_manager_disconnect_specific(
-        self, manager: WebSocketManager
-    ) -> None:
+    async def test_manager_disconnect_specific(self, manager: WebSocketManager) -> None:
         """Should disconnect specific exchange."""
         mock_handler = MagicMock()
         mock_handler.disconnect = AsyncMock()
@@ -540,9 +506,7 @@ class TestWebSocketManager:
         mock_handler.disconnect.assert_called_once()
         assert "binance" not in manager._handlers
 
-    async def test_manager_disconnect_all(
-        self, manager: WebSocketManager
-    ) -> None:
+    async def test_manager_disconnect_all(self, manager: WebSocketManager) -> None:
         """Should disconnect all exchanges."""
         mock_handler1 = MagicMock()
         mock_handler1.disconnect = AsyncMock()
@@ -588,9 +552,7 @@ class TestWebSocketManager:
         mock_handler1.on_order_update.assert_called_once_with(callback)
         mock_handler2.on_order_update.assert_not_called()
 
-    def test_manager_is_connected(
-        self, manager: WebSocketManager
-    ) -> None:
+    def test_manager_is_connected(self, manager: WebSocketManager) -> None:
         """Should check connection status."""
         mock_handler = MagicMock()
         mock_handler._running = True
@@ -599,9 +561,7 @@ class TestWebSocketManager:
         assert manager.is_connected("binance") is True
         assert manager.is_connected("bybit") is False
 
-    def test_manager_connected_exchanges(
-        self, manager: WebSocketManager
-    ) -> None:
+    def test_manager_connected_exchanges(self, manager: WebSocketManager) -> None:
         """Should return list of connected exchanges."""
         mock_handler1 = MagicMock()
         mock_handler1._running = True
@@ -635,9 +595,7 @@ class TestWebSocketListenLoop:
         """Create handler for testing."""
         return BinanceWebSocket(config)
 
-    async def test_listen_handles_text_message(
-        self, handler: BinanceWebSocket
-    ) -> None:
+    async def test_listen_handles_text_message(self, handler: BinanceWebSocket) -> None:
         """Should handle text messages in listen loop."""
         handler._running = True
 
@@ -669,9 +627,7 @@ class TestWebSocketListenLoop:
 
         await handler._listen()
 
-    async def test_listen_handles_ping(
-        self, handler: BinanceWebSocket
-    ) -> None:
+    async def test_listen_handles_ping(self, handler: BinanceWebSocket) -> None:
         """Should respond to ping with pong."""
         handler._running = True
 
@@ -704,9 +660,7 @@ class TestWebSocketListenLoop:
 
         mock_ws.pong.assert_called_once()
 
-    async def test_listen_handles_close(
-        self, handler: BinanceWebSocket
-    ) -> None:
+    async def test_listen_handles_close(self, handler: BinanceWebSocket) -> None:
         """Should handle WebSocket close message."""
         handler._running = True
 

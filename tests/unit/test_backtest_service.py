@@ -346,9 +346,7 @@ class TestBacktestServiceDCASimulation:
         # Should have buy and sell trades
         assert results["total_trades"] >= 2
 
-    def test_simulate_dca_zero_amount(
-        self, backtest_service: BacktestService
-    ) -> None:
+    def test_simulate_dca_zero_amount(self, backtest_service: BacktestService) -> None:
         """Should return empty results with zero amount."""
         candles = [
             Candle(datetime.now(timezone.utc), 50000, 50100, 49900, 50000, 100),
@@ -443,9 +441,7 @@ class TestBacktestServiceMetrics:
         """Create backtest service instance."""
         return BacktestService(mock_db)
 
-    def test_calculate_sharpe_ratio(
-        self, backtest_service: BacktestService
-    ) -> None:
+    def test_calculate_sharpe_ratio(self, backtest_service: BacktestService) -> None:
         """Should calculate Sharpe ratio correctly."""
         # Steady growth
         equity_values = [1000, 1010, 1020, 1030, 1040, 1050]
@@ -464,9 +460,7 @@ class TestBacktestServiceMetrics:
 
         assert sharpe == 0.0
 
-    def test_calculate_max_drawdown(
-        self, backtest_service: BacktestService
-    ) -> None:
+    def test_calculate_max_drawdown(self, backtest_service: BacktestService) -> None:
         """Should calculate max drawdown correctly."""
         # Peak at 1100, trough at 900 = 18.18% drawdown
         equity_values = [1000, 1100, 1000, 900, 950, 1000]
@@ -482,20 +476,13 @@ class TestBacktestServiceMetrics:
         max_dd = backtest_service._calculate_max_drawdown([])
         assert max_dd == 0.0
 
-    def test_downsample_equity(
-        self, backtest_service: BacktestService
-    ) -> None:
+    def test_downsample_equity(self, backtest_service: BacktestService) -> None:
         """Should downsample equity curve to max points."""
         base_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
         # Create 500 points
-        equity_points = [
-            (base_time + timedelta(hours=i), 1000 + i)
-            for i in range(500)
-        ]
+        equity_points = [(base_time + timedelta(hours=i), 1000 + i) for i in range(500)]
 
-        downsampled = backtest_service._downsample_equity(
-            equity_points, max_points=100
-        )
+        downsampled = backtest_service._downsample_equity(equity_points, max_points=100)
 
         assert len(downsampled) <= 101  # max_points + possibly 1 for last
 
@@ -504,20 +491,13 @@ class TestBacktestServiceMetrics:
     ) -> None:
         """Should not downsample if under max_points."""
         base_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
-        equity_points = [
-            (base_time + timedelta(hours=i), 1000 + i)
-            for i in range(50)
-        ]
+        equity_points = [(base_time + timedelta(hours=i), 1000 + i) for i in range(50)]
 
-        downsampled = backtest_service._downsample_equity(
-            equity_points, max_points=100
-        )
+        downsampled = backtest_service._downsample_equity(equity_points, max_points=100)
 
         assert len(downsampled) == 50
 
-    def test_build_results(
-        self, backtest_service: BacktestService
-    ) -> None:
+    def test_build_results(self, backtest_service: BacktestService) -> None:
         """Should build complete results dict."""
         base_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
         trades = [

@@ -57,11 +57,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
         # Disable potentially dangerous browser features
         response.headers["Permissions-Policy"] = (
-            "geolocation=(), "
-            "microphone=(), "
-            "camera=(), "
-            "payment=(), "
-            "usb=()"
+            "geolocation=(), " "microphone=(), " "camera=(), " "payment=(), " "usb=()"
         )
 
         return response

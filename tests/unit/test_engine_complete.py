@@ -53,9 +53,7 @@ class TestBotEngineInitialization:
                 "total": {"USDT": 10000.0, "BTC": 0.5},
             }
         )
-        mock.create_order = AsyncMock(
-            return_value={"id": "12345", "status": "open"}
-        )
+        mock.create_order = AsyncMock(return_value={"id": "12345", "status": "open"})
         mock.cancel_order = AsyncMock(return_value=True)
         mock.get_min_notional = AsyncMock(return_value=Decimal("10"))
         mock.get_min_qty = AsyncMock(return_value=Decimal("0.0001"))
@@ -120,9 +118,7 @@ class TestBotEngineInitialization:
         engine = BotEngine(config=bot_config, risk_manager=mock_rm)
         assert engine.risk_manager == mock_rm
 
-    def test_engine_initialization_with_notifier(
-        self, bot_config: BotConfig
-    ) -> None:
+    def test_engine_initialization_with_notifier(self, bot_config: BotConfig) -> None:
         """Engine should accept Notifier."""
         mock_notifier = MagicMock()
         engine = BotEngine(config=bot_config, notifier=mock_notifier)
@@ -224,24 +220,18 @@ class TestBotEngineStartStop:
 
         mock_exchange.connect.assert_not_called()
 
-    async def test_engine_stop_cancels_orders(
-        self, bot_config: BotConfig
-    ) -> None:
+    async def test_engine_stop_cancels_orders(self, bot_config: BotConfig) -> None:
         """Stop should cancel all open orders."""
         mock_order_manager = MagicMock()
         mock_order_manager.cancel_all_orders = AsyncMock(return_value=5)
 
-        engine = BotEngine(
-            config=bot_config, order_manager=mock_order_manager
-        )
+        engine = BotEngine(config=bot_config, order_manager=mock_order_manager)
         engine._state.is_running = True
 
         await engine.stop()
 
         assert engine._state.is_running is False
-        mock_order_manager.cancel_all_orders.assert_called_once_with(
-            bot_config.id
-        )
+        mock_order_manager.cancel_all_orders.assert_called_once_with(bot_config.id)
 
     async def test_engine_stop_disconnects_exchange(
         self, bot_config: BotConfig, mock_exchange: MagicMock
@@ -285,9 +275,7 @@ class TestBotEngineTick:
                 "total": {"USDT": 10000.0, "BTC": 0.5},
             }
         )
-        mock.create_order = AsyncMock(
-            return_value={"id": "12345", "status": "open"}
-        )
+        mock.create_order = AsyncMock(return_value={"id": "12345", "status": "open"})
         mock.cancel_order = AsyncMock(return_value=True)
         mock.get_min_notional = AsyncMock(return_value=Decimal("10"))
         mock.get_min_qty = AsyncMock(return_value=Decimal("0.0001"))
@@ -382,13 +370,9 @@ class TestBotEngineTick:
         self, bot_config: BotConfig, mock_exchange: MagicMock
     ) -> None:
         """Tick should handle ticker fetch timeout gracefully."""
-        mock_exchange.fetch_ticker = AsyncMock(
-            side_effect=asyncio.TimeoutError()
-        )
+        mock_exchange.fetch_ticker = AsyncMock(side_effect=asyncio.TimeoutError())
 
-        engine = BotEngine(
-            config=bot_config, exchange_timeout_seconds=0.01
-        )
+        engine = BotEngine(config=bot_config, exchange_timeout_seconds=0.01)
         engine._state.is_running = True
 
         # Should not raise
@@ -401,9 +385,7 @@ class TestBotEngineTick:
         self, bot_config: BotConfig, mock_exchange: MagicMock
     ) -> None:
         """Tick should handle ticker fetch error gracefully."""
-        mock_exchange.fetch_ticker = AsyncMock(
-            side_effect=Exception("API Error")
-        )
+        mock_exchange.fetch_ticker = AsyncMock(side_effect=Exception("API Error"))
 
         engine = BotEngine(config=bot_config)
         engine._state.is_running = True
@@ -499,9 +481,7 @@ class TestBotEngineCircuitBreaker:
         )
         mock_cb.record_order_placed = AsyncMock()
 
-        engine = BotEngine(
-            config=bot_config, circuit_breaker=mock_cb
-        )
+        engine = BotEngine(config=bot_config, circuit_breaker=mock_cb)
         engine._state.is_running = True
 
         await engine._tick()
@@ -558,15 +538,11 @@ class TestBotEngineRiskManager:
             investment=Decimal("1000"),
         )
 
-    async def test_tick_calls_risk_manager(
-        self, bot_config: BotConfig
-    ) -> None:
+    async def test_tick_calls_risk_manager(self, bot_config: BotConfig) -> None:
         """Tick should call risk manager update_state."""
         mock_rm = MagicMock()
         mock_rm.update_state = AsyncMock(
-            return_value=RiskDecision(
-                status=RiskStatus.OK, action=RiskAction.NONE
-            )
+            return_value=RiskDecision(status=RiskStatus.OK, action=RiskAction.NONE)
         )
         mock_rm.is_trading_allowed = MagicMock(return_value=True)
 
@@ -643,9 +619,7 @@ class TestBotEngineRiskManager:
         """Tick should not trade if trading not allowed."""
         mock_rm = MagicMock()
         mock_rm.update_state = AsyncMock(
-            return_value=RiskDecision(
-                status=RiskStatus.OK, action=RiskAction.NONE
-            )
+            return_value=RiskDecision(status=RiskStatus.OK, action=RiskAction.NONE)
         )
         mock_rm.is_trading_allowed = MagicMock(return_value=False)
 
@@ -685,9 +659,7 @@ class TestBotEngineOrderFiltering:
                 "total": {"USDT": 100.0, "BTC": 0.001},
             }
         )
-        mock.create_order = AsyncMock(
-            return_value={"id": "12345", "status": "open"}
-        )
+        mock.create_order = AsyncMock(return_value={"id": "12345", "status": "open"})
         mock.get_min_notional = AsyncMock(return_value=Decimal("10"))
         mock.get_min_qty = AsyncMock(return_value=Decimal("0.0001"))
         mock.get_step_size = AsyncMock(return_value=Decimal("0.0001"))
@@ -707,15 +679,23 @@ class TestBotEngineOrderFiltering:
             investment=Decimal("1000"),
         )
 
-    def test_filter_orders_by_balance_buy(
-        self, bot_config: BotConfig
-    ) -> None:
+    def test_filter_orders_by_balance_buy(self, bot_config: BotConfig) -> None:
         """Should filter buy orders by available quote balance."""
         engine = BotEngine(config=bot_config)
 
         orders = [
-            Order(side="buy", type="limit", price=Decimal("50000"), quantity=Decimal("0.01")),
-            Order(side="buy", type="limit", price=Decimal("49000"), quantity=Decimal("0.01")),
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("50000"),
+                quantity=Decimal("0.01"),
+            ),
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("49000"),
+                quantity=Decimal("0.01"),
+            ),
         ]
 
         # 100 USDT available, need 500 USDT for first order
@@ -735,14 +715,17 @@ class TestBotEngineOrderFiltering:
         # Both orders need more than 100 USDT
         assert len(filtered) == 0
 
-    def test_filter_orders_by_balance_sell(
-        self, bot_config: BotConfig
-    ) -> None:
+    def test_filter_orders_by_balance_sell(self, bot_config: BotConfig) -> None:
         """Should filter sell orders by available base balance."""
         engine = BotEngine(config=bot_config)
 
         orders = [
-            Order(side="sell", type="limit", price=Decimal("51000"), quantity=Decimal("0.1")),
+            Order(
+                side="sell",
+                type="limit",
+                price=Decimal("51000"),
+                quantity=Decimal("0.1"),
+            ),
         ]
 
         # Only 0.01 BTC available
@@ -764,14 +747,17 @@ class TestBotEngineOrderFiltering:
         assert len(filtered) == 1
         assert filtered[0].quantity == Decimal("0.01")
 
-    def test_filter_orders_by_min_notional(
-        self, bot_config: BotConfig
-    ) -> None:
+    def test_filter_orders_by_min_notional(self, bot_config: BotConfig) -> None:
         """Should filter orders below min notional."""
         engine = BotEngine(config=bot_config)
 
         orders = [
-            Order(side="buy", type="limit", price=Decimal("50000"), quantity=Decimal("0.0001")),
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("50000"),
+                quantity=Decimal("0.0001"),
+            ),
         ]
 
         balance = {
@@ -802,9 +788,7 @@ class TestBotEngineOrderFiltering:
         )
         assert normalized == Decimal("0.012")
 
-    def test_normalize_quantity_below_min(
-        self, bot_config: BotConfig
-    ) -> None:
+    def test_normalize_quantity_below_min(self, bot_config: BotConfig) -> None:
         """Should return 0 if normalized quantity below min."""
         engine = BotEngine(config=bot_config)
 
@@ -815,16 +799,29 @@ class TestBotEngineOrderFiltering:
         )
         assert normalized == Decimal("0")
 
-    def test_prioritize_orders_by_price(
-        self, bot_config: BotConfig
-    ) -> None:
+    def test_prioritize_orders_by_price(self, bot_config: BotConfig) -> None:
         """Should prioritize orders closest to current price."""
         engine = BotEngine(config=bot_config)
 
         orders = [
-            Order(side="buy", type="limit", price=Decimal("45000"), quantity=Decimal("0.01")),
-            Order(side="buy", type="limit", price=Decimal("49000"), quantity=Decimal("0.01")),
-            Order(side="buy", type="limit", price=Decimal("48000"), quantity=Decimal("0.01")),
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("45000"),
+                quantity=Decimal("0.01"),
+            ),
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("49000"),
+                quantity=Decimal("0.01"),
+            ),
+            Order(
+                side="buy",
+                type="limit",
+                price=Decimal("48000"),
+                quantity=Decimal("0.01"),
+            ),
         ]
 
         balance = {
@@ -874,9 +871,7 @@ class TestBotEngineGridDeduplication:
                 "total": {"USDT": 10000.0, "BTC": 0.5},
             }
         )
-        mock.create_order = AsyncMock(
-            return_value={"id": "12345", "status": "open"}
-        )
+        mock.create_order = AsyncMock(return_value={"id": "12345", "status": "open"})
         mock.get_min_notional = AsyncMock(return_value=None)
         return mock
 
@@ -905,18 +900,14 @@ class TestBotEngineGridDeduplication:
             quantity=Decimal("0.01"),
             grid_level=5,
         )
-        mock_strategy.calculate_orders = MagicMock(
-            return_value=[order_with_level]
-        )
+        mock_strategy.calculate_orders = MagicMock(return_value=[order_with_level])
 
         mock_order_manager = MagicMock()
         mock_order_manager.get_open_orders = AsyncMock(return_value=[])
         mock_order_manager.has_active_grid_order = MagicMock(return_value=True)
         mock_order_manager.submit_order = AsyncMock()
 
-        engine = BotEngine(
-            config=bot_config, order_manager=mock_order_manager
-        )
+        engine = BotEngine(config=bot_config, order_manager=mock_order_manager)
         engine._state.is_running = True
 
         await engine._tick()
@@ -935,18 +926,14 @@ class TestBotEngineGridDeduplication:
             quantity=Decimal("0.01"),
             grid_level=5,
         )
-        mock_strategy.calculate_orders = MagicMock(
-            return_value=[order_with_level]
-        )
+        mock_strategy.calculate_orders = MagicMock(return_value=[order_with_level])
 
         mock_order_manager = MagicMock()
         mock_order_manager.get_open_orders = AsyncMock(return_value=[])
         mock_order_manager.has_active_grid_order = MagicMock(return_value=False)
         mock_order_manager.submit_order = AsyncMock()
 
-        engine = BotEngine(
-            config=bot_config, order_manager=mock_order_manager
-        )
+        engine = BotEngine(config=bot_config, order_manager=mock_order_manager)
         engine._state.is_running = True
 
         await engine._tick()
@@ -1115,9 +1102,7 @@ class TestBotEngineOrderFilled:
         with patch("api.core.ws_manager.broadcast_pnl_update", new_callable=AsyncMock):
             await engine.handle_order_filled(filled_order)
 
-        mock_cb.record_pnl.assert_called_once_with(
-            bot_config.id, Decimal("-25")
-        )
+        mock_cb.record_pnl.assert_called_once_with(bot_config.id, Decimal("-25"))
 
     async def test_handle_partial_fill_adjusts_for_fee(
         self, bot_config: BotConfig
@@ -1154,9 +1139,7 @@ class TestBotEngineStats:
     def mock_strategy(self) -> MagicMock:
         """Create mock strategy."""
         mock = MagicMock()
-        mock.get_stats = MagicMock(
-            return_value={"grid_levels": 20, "filled_levels": 5}
-        )
+        mock.get_stats = MagicMock(return_value={"grid_levels": 20, "filled_levels": 5})
         mock.realized_pnl = Decimal("150")
         return mock
 
@@ -1180,9 +1163,7 @@ class TestBotEngineStats:
             investment=Decimal("1000"),
         )
 
-    def test_get_stats_returns_correct_data(
-        self, bot_config: BotConfig
-    ) -> None:
+    def test_get_stats_returns_correct_data(self, bot_config: BotConfig) -> None:
         """Should return correct stats."""
         engine = BotEngine(config=bot_config)
         engine._state.is_running = True

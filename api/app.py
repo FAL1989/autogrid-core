@@ -168,9 +168,11 @@ def create_app() -> FastAPI:
         status_code = (
             status.HTTP_200_OK
             if overall_status == "healthy"
-            else status.HTTP_503_SERVICE_UNAVAILABLE
-            if checks.get("database", {}).get("status") == "error"
-            else status.HTTP_200_OK
+            else (
+                status.HTTP_503_SERVICE_UNAVAILABLE
+                if checks.get("database", {}).get("status") == "error"
+                else status.HTTP_200_OK
+            )
         )
 
         return JSONResponse(

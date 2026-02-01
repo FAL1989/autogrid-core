@@ -87,9 +87,7 @@ class TestRiskDecision:
 
     def test_decision_with_defaults(self) -> None:
         """Decision should have optional fields."""
-        decision = RiskDecision(
-            status=RiskStatus.OK, action=RiskAction.NONE
-        )
+        decision = RiskDecision(status=RiskStatus.OK, action=RiskAction.NONE)
         assert decision.status == RiskStatus.OK
         assert decision.action == RiskAction.NONE
         assert decision.reason is None
@@ -497,9 +495,7 @@ class TestRiskManagerCheckOrder:
                 db_session=mock_db_session,
             )
 
-    def test_check_order_allows_when_no_state(
-        self, risk_manager: RiskManager
-    ) -> None:
+    def test_check_order_allows_when_no_state(self, risk_manager: RiskManager) -> None:
         """Should allow orders when no state is loaded."""
         from bot.strategies.base import Order
 
@@ -513,9 +509,7 @@ class TestRiskManagerCheckOrder:
         result = risk_manager.check_order(order, Decimal("50000"))
         assert result is True
 
-    def test_check_order_blocks_when_paused(
-        self, risk_manager: RiskManager
-    ) -> None:
+    def test_check_order_blocks_when_paused(self, risk_manager: RiskManager) -> None:
         """Should block orders when status is PAUSED."""
         from bot.strategies.base import Order
 
@@ -617,24 +611,18 @@ class TestRiskManagerIsTradingAllowed:
                 db_session=mock_db_session,
             )
 
-    def test_trading_allowed_when_no_state(
-        self, risk_manager: RiskManager
-    ) -> None:
+    def test_trading_allowed_when_no_state(self, risk_manager: RiskManager) -> None:
         """Should allow trading when no state exists."""
         assert risk_manager.is_trading_allowed() is True
 
-    def test_trading_allowed_when_status_ok(
-        self, risk_manager: RiskManager
-    ) -> None:
+    def test_trading_allowed_when_status_ok(self, risk_manager: RiskManager) -> None:
         """Should allow trading when status is OK."""
         risk_manager._state = MagicMock()
         risk_manager._state.status = RiskStatus.OK.value
 
         assert risk_manager.is_trading_allowed() is True
 
-    def test_trading_not_allowed_when_paused(
-        self, risk_manager: RiskManager
-    ) -> None:
+    def test_trading_not_allowed_when_paused(self, risk_manager: RiskManager) -> None:
         """Should not allow trading when paused."""
         risk_manager._state = MagicMock()
         risk_manager._state.status = RiskStatus.PAUSED.value
@@ -845,9 +833,7 @@ class TestRiskManagerLoadState:
 
         await risk_manager.load_state()
 
-        mock_strategy.update_investment.assert_called_once_with(
-            Decimal("15000")
-        )
+        mock_strategy.update_investment.assert_called_once_with(Decimal("15000"))
 
     async def test_load_state_handles_no_existing_state(
         self, risk_manager: RiskManager, mock_db_session: MagicMock
